@@ -52,8 +52,8 @@ class Multimodal_Datasets(Dataset):
         return self.labels.shape[1], self.labels.shape[2]
 
     def apply_dropout(self, x, dropout_rate):
-        mask = (torch.FloatTensor(x.shape[0], x.shape[1]).uniform_() > dropout_rate).float()
-        return x * mask.unsqueeze(-1).expand_as(x)
+        mask = torch.bernoulli(torch.full(x.shape, 1 - dropout_rate))
+        return x * mask
     def __len__(self):
         return len(self.labels)
 
