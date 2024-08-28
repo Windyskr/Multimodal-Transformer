@@ -8,11 +8,15 @@ def get_data(args, dataset, split='train'):
     data_path = os.path.join(args.data_path, dataset) + f'_{split}_{alignment}.dt'
     if not os.path.exists(data_path):
         print(f"  - Creating new {split} data")
-        data = Multimodal_Datasets(args.data_path, dataset, split, args.aligned)
+        data = Multimodal_Datasets(args.data_path, dataset, split, args.aligned,
+                                   args.dropout_l, args.dropout_a, args.dropout_v)
         torch.save(data, data_path)
     else:
         print(f"  - Found cached {split} data")
         data = torch.load(data_path)
+        data.dropout_l = args.dropout_l
+        data.dropout_a = args.dropout_a
+        data.dropout_v = args.dropout_v
     return data
 
 

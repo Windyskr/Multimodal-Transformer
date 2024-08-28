@@ -75,6 +75,15 @@ parser.add_argument('--no_cuda', action='store_true',
                     help='do not use cuda')
 parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
+
+# add dropout rate for each modality
+parser.add_argument('--dropout_l', type=float, default=0.0,
+                    help='dropout rate for language modality')
+parser.add_argument('--dropout_a', type=float, default=0.0,
+                    help='dropout rate for audio modality')
+parser.add_argument('--dropout_v', type=float, default=0.0,
+                    help='dropout rate for visual modality')
+
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)

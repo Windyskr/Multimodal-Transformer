@@ -89,6 +89,12 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         num_batches = hyp_params.n_train // hyp_params.batch_size
         proc_loss, proc_size = 0, 0
         start_time = time.time()
+
+        # Apply dropout
+        train_loader.dataset.dropout_l = hyp_params.dropout_l
+        train_loader.dataset.dropout_a = hyp_params.dropout_a
+        train_loader.dataset.dropout_v = hyp_params.dropout_v
+
         for i_batch, (batch_X, batch_Y, batch_META) in enumerate(train_loader):
             sample_ind, text, audio, vision = batch_X
             eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
