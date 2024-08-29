@@ -85,8 +85,6 @@ parser.add_argument('--dropout_a', type=float, default=0.0,
 parser.add_argument('--dropout_v', type=float, default=0.0,
                     help='dropout rate for visual modality')
 # Semi-supervised learning
-parser.add_argument('--labeled_ratio', type=float, default=0.1,
-                    help='ratio of labeled data (default: 0.1)')
 parser.add_argument('--labeled_ratio', type=float, default=0.1, help='Ratio of labeled data to use')
 parser.add_argument('--pseudo_threshold', type=float, default=0.95, help='Confidence threshold for pseudo-labeling')
 parser.add_argument('--consistency_type', type=str, default='mse', choices=['mse', 'kl'], help='Type of consistency loss')
