@@ -13,22 +13,31 @@ from src.dataset import get_semi_supervised_data_loaders
 from src.hooks import PseudoLabelingHook, ConsistencyRegularizationHook
 from src.eval_metrics import eval_mosei_senti, eval_mosi, eval_iemocap
 
-components = {
-    'model': model,
-    'pseudo_labeling_hook': PseudoLabelingHook(threshold=hyp_params.pseudo_threshold),
-    'consistency_hook': ConsistencyRegularizationHook(consistency_type=hyp_params.consistency_type)
-}
-def initiate(hyp_params, components, labeled_loader, unlabeled_loader, valid_loader, test_loader):
-    model = components['model']
+
+def initiate(hyp_params, labeled_loader, unlabeled_loader, valid_loader, test_loader):
+    model = getattr(models, hyp_params.model)(hyp_params)
+
+    if hyp_params.use_cuda:
+        model = model.cuda()
+
     optimizer = getattr(optim, hyp_params.optim)(model.parameters(), lr=hyp_params.lr)
     criterion = getattr(nn, hyp_params.criterion)()
-    labeled_loader, unlabeled_loader = get_semi_supervised_data_loaders(hyp_params)
 
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=hyp_params.when, factor=0.1, verbose=True)
-    settings = {'model': model,
-                'optimizer': optimizer,
-                'criterion': criterion,
-                'scheduler': scheduler}
+
+    # 在这里定义 components 字典
+    components = {
+        'model': model,
+        'pseudo_labeling_hook': PseudoLabelingHook(threshold=hyp_params.pseudo_threshold),
+        'consistency_hook': ConsistencyRegularizationHook(consistency_type=hyp_params.consistency_type)
+    }
+
+    settings = {
+        'model': model,
+        'optimizer': optimizer,
+        'criterion': criterion,
+        'scheduler': scheduler
+    }
 
     return train_model(settings, hyp_params, components, labeled_loader, unlabeled_loader, valid_loader, test_loader)
 
