@@ -1,15 +1,17 @@
 import numpy as np
-from torch.utils.data.dataset import Dataset
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 import pickle
 import os
 from scipy import signal
 import torch
+from src.data_augmentation import augment_data
 
 if torch.cuda.is_available():
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
-    
+
+
 ############################################################################################
 # This file provides basic processing script for the multimodal datasets we use. For other
 # datasets, small modifications may be needed (depending on the type of the data, etc.)
@@ -18,35 +20,36 @@ else:
 
 class Multimodal_Datasets(Dataset):
     def __init__(self, dataset_path, data='mosei_senti', split_type='train', if_align=False,
-             dropout_l=0.0, dropout_a=0.0, dropout_v=0.0):
+                 dropout_l=0.0, dropout_a=0.0, dropout_v=0.0):
         super(Multimodal_Datasets, self).__init__()
-        dataset_path = os.path.join(dataset_path, data+'_data.pkl' if if_align else data+'_data_noalign.pkl' )
+        dataset_path = os.path.join(dataset_path, data + '_data.pkl' if if_align else data + '_data_noalign.pkl')
         dataset = pickle.load(open(dataset_path, 'rb'))
 
-        # These are torch tensors
         self.vision = torch.tensor(dataset[split_type]['vision'].astype(np.float32)).cpu().detach()
         self.text = torch.tensor(dataset[split_type]['text'].astype(np.float32)).cpu().detach()
         self.audio = dataset[split_type]['audio'].astype(np.float32)
         self.audio[self.audio == -np.inf] = 0
         self.audio = torch.tensor(self.audio).cpu().detach()
         self.labels = torch.tensor(dataset[split_type]['labels'].astype(np.float32)).cpu().detach()
-        
-        # Note: this is STILL an numpy array
+
         self.meta = dataset[split_type]['id'] if 'id' in dataset[split_type].keys() else None
-       
+
         self.data = data
-        
-        self.n_modalities = 3 # vision/ text/ audio
-        # dropout rates for each modality
+        self.n_modalities = 3
+
         self.dropout_l = dropout_l
         self.dropout_a = dropout_a
         self.dropout_v = dropout_v
+
     def get_n_modalities(self):
         return self.n_modalities
+
     def get_seq_len(self):
         return self.text.shape[1], self.audio.shape[1], self.vision.shape[1]
+
     def get_dim(self):
         return self.text.shape[2], self.audio.shape[2], self.vision.shape[2]
+
     def get_lbl_info(self):
         # return number_of_labels, label_dim
         return self.labels.shape[1], self.labels.shape[2]
@@ -64,19 +67,122 @@ class Multimodal_Datasets(Dataset):
              self.apply_dropout(self.audio[index], self.dropout_a),
              self.apply_dropout(self.vision[index], self.dropout_v))
         Y = self.labels[index]
-
-        if self.meta is None:
-            META = (0, 0, 0)
-        else:
-            if self.data == 'mosi':
-                META = (self.meta[index][0].decode('UTF-8'),
-                        self.meta[index][1].decode('UTF-8'),
-                        self.meta[index][2].decode('UTF-8'))
-            else:
-                META = (self.meta[index][0], self.meta[index][1], self.meta[index][2])
+        META = (0, 0, 0) if self.meta is None else (self.meta[index][0], self.meta[index][1], self.meta[index][2])
 
         if self.data == 'iemocap':
             Y = torch.argmax(Y, dim=-1)
 
         return X, Y, META
 
+
+class SemiSupervisedMultimodalDataset(Dataset):
+    def __init__(self, dataset_path, data='mosei_senti', split_type='train', if_align=False,
+                 labeled_ratio=0.1, dropout_l=0.0, dropout_a=0.0, dropout_v=0.0):
+        super(SemiSupervisedMultimodalDataset, self).__init__()
+
+        self.dataset_path = os.path.join(dataset_path, data + '_data.pkl' if if_align else data + '_data_noalign.pkl')
+        self.dataset = pickle.load(open(self.dataset_path, 'rb'))
+        self.split_type = split_type
+        self.labeled_ratio = labeled_ratio
+
+        # Load data
+        self.vision = torch.tensor(self.dataset[split_type]['vision'].astype(np.float32)).cpu().detach()
+        self.text = torch.tensor(self.dataset[split_type]['text'].astype(np.float32)).cpu().detach()
+        self.audio = torch.tensor(self.dataset[split_type]['audio'].astype(np.float32)).cpu().detach()
+        self.labels = torch.tensor(self.dataset[split_type]['labels'].astype(np.float32)).cpu().detach()
+
+        self.data = data
+        self.n_modalities = 3
+        self.dropout_l = dropout_l
+        self.dropout_a = dropout_a
+        self.dropout_v = dropout_v
+        if self.apply_augmentation:
+            text, audio, vision = augment_data(text, audio, vision)
+        # Split data into labeled and unlabeled sets
+        self.split_labeled_unlabeled()
+
+    def split_labeled_unlabeled(self):
+        total_samples = len(self.labels)
+        labeled_samples = int(total_samples * self.labeled_ratio)
+
+        # Randomly select labeled samples
+        labeled_indices = np.random.choice(total_samples, labeled_samples, replace=False)
+        unlabeled_indices = np.setdiff1d(np.arange(total_samples), labeled_indices)
+
+        self.labeled_indices = labeled_indices
+        self.unlabeled_indices = unlabeled_indices
+
+    def get_labeled_data(self):
+        return (self.text[self.labeled_indices],
+                self.audio[self.labeled_indices],
+                self.vision[self.labeled_indices],
+                self.labels[self.labeled_indices])
+
+    def get_unlabeled_data(self):
+        return (self.text[self.unlabeled_indices],
+                self.audio[self.unlabeled_indices],
+                self.vision[self.unlabeled_indices])
+
+    def apply_dropout(self, x, dropout_rate):
+        if dropout_rate == 0:
+            return x
+        mask = torch.bernoulli(torch.full(x.shape[:2], 1 - dropout_rate)).unsqueeze(-1)
+        return x * mask
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, index):
+        text = self.apply_dropout(self.text[index], self.dropout_l)
+        audio = self.apply_dropout(self.audio[index], self.dropout_a)
+        vision = self.apply_dropout(self.vision[index], self.dropout_v)
+
+        if index in self.labeled_indices:
+            label = self.labels[index]
+            is_labeled = True
+        else:
+            label = torch.tensor(-1)  # Placeholder for unlabeled data
+            is_labeled = False
+
+        return {
+            'text': text,
+            'audio': audio,
+            'vision': vision,
+            'label': label,
+            'is_labeled': is_labeled
+        }
+
+
+# Function to create data loaders
+def get_semi_supervised_data_loaders(args):
+    dataset = Multimodal_Datasets(args.data_path, data=args.dataset, split_type='train',
+                                  if_align=args.aligned, dropout_l=args.dropout_l,
+                                  dropout_a=args.dropout_a, dropout_v=args.dropout_v)
+
+    dataset_size = len(dataset)
+    indices = list(range(dataset_size))
+    np.random.shuffle(indices)
+
+    labeled_size = int(args.labeled_ratio * dataset_size)
+    labeled_indices = indices[:labeled_size]
+    unlabeled_indices = indices[labeled_size:]
+
+    labeled_sampler = SubsetRandomSampler(labeled_indices)
+    unlabeled_sampler = SubsetRandomSampler(unlabeled_indices)
+
+    labeled_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=labeled_sampler)
+    unlabeled_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=unlabeled_sampler)
+
+    return labeled_loader, unlabeled_loader
+
+def get_data(args, dataset, split='train'):
+    alignment = 'a' if args.aligned else 'na'
+    data_path = os.path.join(args.data_path, dataset) + f'_{split}_{alignment}.dt'
+    if not os.path.exists(data_path):
+        print(f"  - Creating new {split} data")
+        data = Multimodal_Datasets(args.data_path, dataset, split, args.aligned)
+        torch.save(data, data_path)
+    else:
+        print(f"  - Found cached {split} data")
+        data = torch.load(data_path)
+    return data

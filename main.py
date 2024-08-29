@@ -3,6 +3,7 @@ import argparse
 from src.utils import *
 from torch.utils.data import DataLoader
 from src import train
+from src.dataset import get_semi_supervised_data_loaders, get_data
 
 
 parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
@@ -83,7 +84,23 @@ parser.add_argument('--dropout_a', type=float, default=0.0,
                     help='dropout rate for audio modality')
 parser.add_argument('--dropout_v', type=float, default=0.0,
                     help='dropout rate for visual modality')
+# Semi-supervised learning
+parser.add_argument('--labeled_ratio', type=float, default=0.1,
+                    help='ratio of labeled data (default: 0.1)')
+parser.add_argument('--labeled_ratio', type=float, default=0.1, help='Ratio of labeled data to use')
+parser.add_argument('--pseudo_threshold', type=float, default=0.95, help='Confidence threshold for pseudo-labeling')
+parser.add_argument('--consistency_type', type=str, default='mse', choices=['mse', 'kl'], help='Type of consistency loss')
+parser.add_argument('--consistency_weight', type=float, default=1.0, help='Weight for consistency loss')
+parser.add_argument('--temperature', type=float, default=1.0, help='Temperature for sharpening predictions')
+parser.add_argument('--unsup_warm_up', type=float, default=0.4, help='Warm-up ratio for unsupervised loss')
+parser.add_argument('--ema_decay', type=float, default=0.999, help='Decay rate for EMA model')
+parser.add_argument('--use_mixup', action='store_true', help='Whether to use mixup augmentation')
+parser.add_argument('--mixup_alpha', type=float, default=0.4, help='Alpha parameter for mixup')
 
+# Arguments for training control
+parser.add_argument('--use_warmup', action='store_true', help='Whether to use learning rate warmup')
+parser.add_argument('--warmup_epochs', type=int, default=5, help='Number of warmup epochs')
+parser.add_argument('--use_ema', action='store_true', help='Whether to use EMA model averaging')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -124,11 +141,10 @@ if torch.cuda.is_available():
 
 print("Start loading the data....")
 
-train_data = get_data(args, dataset, 'train')
+labeled_loader, unlabeled_loader = get_semi_supervised_data_loaders(args)
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
-train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
 valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True)
 test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
 
@@ -143,19 +159,23 @@ if not args.aligned:
 ####################################################################
 
 hyp_params = args
-hyp_params.orig_d_l, hyp_params.orig_d_a, hyp_params.orig_d_v = train_data.get_dim()
-hyp_params.l_len, hyp_params.a_len, hyp_params.v_len = train_data.get_seq_len()
+args.orig_d_l, args.orig_d_a, args.orig_d_v = labeled_loader.dataset.get_dim()
+args.l_len, args.a_len, args.v_len = labeled_loader.dataset.get_seq_len()
 hyp_params.layers = args.nlevels
 hyp_params.use_cuda = use_cuda
 hyp_params.dataset = dataset
 hyp_params.when = args.when
 hyp_params.batch_chunk = args.batch_chunk
-hyp_params.n_train, hyp_params.n_valid, hyp_params.n_test = len(train_data), len(valid_data), len(test_data)
+hyp_params.n_train = len(labeled_loader.dataset) + len(unlabeled_loader.dataset)
+hyp_params.n_labeled = len(labeled_loader.dataset)
+hyp_params.n_unlabeled = len(unlabeled_loader.dataset)
+hyp_params.n_valid = len(valid_data)
+hyp_params.n_test = len(test_data)
 hyp_params.model = str.upper(args.model.strip())
 hyp_params.output_dim = output_dim_dict.get(dataset, 1)
 hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
-
+print(f"Labeled data: {args.n_labeled}, Unlabeled data: {args.n_unlabeled}")
 
 if __name__ == '__main__':
-    test_loss = train.initiate(hyp_params, train_loader, valid_loader, test_loader)
+    test_loss = train.initiate(hyp_params, labeled_loader, unlabeled_loader, valid_loader, test_loader)
 

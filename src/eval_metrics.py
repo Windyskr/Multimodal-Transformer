@@ -88,4 +88,104 @@ def eval_iemocap(results, truths, single=-1):
         print("  - Accuracy: ", acc)
 
 
+def eval_semi_supervised(labeled_results, unlabeled_results, labeled_truths, threshold=0.95):
+    """
+    Evaluate the performance of a semi-supervised model.
 
+    Args:
+    labeled_results (np.array): Predictions for labeled data
+    unlabeled_results (np.array): Predictions for unlabeled data
+    labeled_truths (np.array): True labels for labeled data
+    threshold (float): Confidence threshold for pseudo-labeling
+
+    Returns:
+    dict: A dictionary containing various evaluation metrics
+    """
+    # Metrics for labeled data
+    labeled_accuracy = accuracy_score(labeled_truths, np.argmax(labeled_results, axis=1))
+    labeled_f1 = f1_score(labeled_truths, np.argmax(labeled_results, axis=1), average='weighted')
+
+    # Metrics for unlabeled data
+    unlabeled_confidence = np.max(unlabeled_results, axis=1)
+    high_confidence_mask = unlabeled_confidence > threshold
+    high_confidence_ratio = np.mean(high_confidence_mask)
+
+    # Pseudo-label distribution
+    pseudo_labels = np.argmax(unlabeled_results, axis=1)
+    unique, counts = np.unique(pseudo_labels[high_confidence_mask], return_counts=True)
+    pseudo_label_distribution = dict(zip(unique, counts / sum(counts)))
+
+    return {
+        "labeled_accuracy": labeled_accuracy,
+        "labeled_f1": labeled_f1,
+        "unlabeled_high_confidence_ratio": high_confidence_ratio,
+        "pseudo_label_distribution": pseudo_label_distribution
+    }
+
+
+def detailed_eval_semi_supervised(model, labeled_loader, unlabeled_loader, threshold=0.95):
+    """
+    Perform a detailed evaluation of the semi-supervised model.
+
+    Args:
+    model (torch.nn.Module): The trained model
+    labeled_loader (DataLoader): DataLoader for labeled data
+    unlabeled_loader (DataLoader): DataLoader for unlabeled data
+    threshold (float): Confidence threshold for pseudo-labeling
+
+    Returns:
+    dict: A dictionary containing detailed evaluation metrics
+    """
+    model.eval()
+    labeled_preds, labeled_truths = [], []
+    unlabeled_preds = []
+
+    with torch.no_grad():
+        # Evaluate on labeled data
+        for batch in labeled_loader:
+            inputs = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            outputs = model(**inputs)
+            labeled_preds.append(outputs.cpu().numpy())
+            labeled_truths.append(batch['label'].numpy())
+
+        # Evaluate on unlabeled data
+        for batch in unlabeled_loader:
+            inputs = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            outputs = model(**inputs)
+            unlabeled_preds.append(outputs.cpu().numpy())
+
+    labeled_preds = np.concatenate(labeled_preds)
+    labeled_truths = np.concatenate(labeled_truths)
+    unlabeled_preds = np.concatenate(unlabeled_preds)
+
+    # Basic semi-supervised evaluation
+    basic_metrics = eval_semi_supervised(labeled_preds, unlabeled_preds, labeled_truths, threshold)
+
+    # Detailed classification report for labeled data
+    class_report = classification_report(labeled_truths, np.argmax(labeled_preds, axis=1), output_dict=True)
+
+    # Confusion matrix for labeled data
+    conf_matrix = confusion_matrix(labeled_truths, np.argmax(labeled_preds, axis=1))
+
+    return {
+        **basic_metrics,
+        "classification_report": class_report,
+        "confusion_matrix": conf_matrix
+    }
+
+
+# Keep the existing evaluation functions (eval_mosei_senti, eval_mosi, eval_iemocap)
+# ...
+
+# Add a new function to choose the appropriate evaluation based on the dataset
+def evaluate_semi_supervised(results, truths, dataset, unlabeled_results=None):
+    if unlabeled_results is not None:
+        return detailed_eval_semi_supervised(results, unlabeled_results, truths)
+    elif dataset == "mosei_senti":
+        return eval_mosei_senti(results, truths, exclude_zero=True)
+    elif dataset == 'mosi':
+        return eval_mosi(results, truths, exclude_zero=True)
+    elif dataset == 'iemocap':
+        return eval_iemocap(results, truths)
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
