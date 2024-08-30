@@ -130,3 +130,12 @@ def get_data(args, dataset, split='train'):
         print(f"  - Found cached {split} data")
         data = torch.load(data_path)
     return data
+
+def get_semi_supervised_data_loaders(args):
+    labeled_data = get_data(args, args.dataset, 'train')
+    unlabeled_data = get_data(args, args.dataset, 'train')  # 使用相同的训练数据作为无标签数据
+
+    labeled_loader = DataLoader(labeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+    unlabeled_loader = DataLoader(unlabeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+
+    return labeled_loader, unlabeled_loader
