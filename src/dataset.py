@@ -109,7 +109,7 @@ class PseudolabelMultimodalDataset(Dataset):
 
             print(f"Labeled mask dtype: {self.labeled_mask.dtype}")
             print(f"Labeled mask shape: {self.labeled_mask.shape}")
-            print(f"Labeled mask sum: {self.labeled_mask.sum().item()}")
+            print(f"Labeled mask sum: {self.labeled_mask.int().sum().item()}")
 
             # For unlabeled data, set labels to -1
             unlabeled_mask = torch.logical_not(self.labeled_mask)
