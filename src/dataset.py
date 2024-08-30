@@ -152,23 +152,11 @@ class SemiSupervisedMultimodalDataset(Dataset):
 
 # Function to create data loaders
 def get_semi_supervised_data_loaders(args):
-    dataset = Multimodal_Datasets(args.data_path, data=args.dataset, split_type='train',
-                                  if_align=args.aligned, dropout_l=args.dropout_l,
-                                  dropout_a=args.dropout_a, dropout_v=args.dropout_v)
+    labeled_data = get_data(args, args.dataset, 'train')
+    unlabeled_data = get_data(args, args.dataset, 'train')  # 使用相同的训练数据作为无标签数据
 
-    dataset_size = len(dataset)
-    indices = list(range(dataset_size))
-    np.random.shuffle(indices)
-
-    labeled_size = int(args.labeled_ratio * dataset_size)
-    labeled_indices = indices[:labeled_size]
-    unlabeled_indices = indices[labeled_size:]
-
-    labeled_sampler = SubsetRandomSampler(labeled_indices)
-    unlabeled_sampler = SubsetRandomSampler(unlabeled_indices)
-
-    labeled_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=labeled_sampler)
-    unlabeled_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=unlabeled_sampler)
+    labeled_loader = DataLoader(labeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+    unlabeled_loader = DataLoader(unlabeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
 
     return labeled_loader, unlabeled_loader
 

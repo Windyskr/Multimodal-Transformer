@@ -4,6 +4,7 @@ from src.utils import *
 from torch.utils.data import DataLoader
 from src import train
 from src.dataset import get_semi_supervised_data_loaders, get_data
+from src.utils import custom_collate
 
 
 parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
@@ -142,9 +143,9 @@ print("Start loading the data....")
 labeled_loader, unlabeled_loader = get_semi_supervised_data_loaders(args)
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
-   
-valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
+
+valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
 
 print('Finish loading the data....')
 if not args.aligned:
