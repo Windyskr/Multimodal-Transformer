@@ -81,58 +81,59 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
     ctc_criterion = settings['ctc_criterion']
     
     scheduler = settings['scheduler']
-    
 
-    def train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer, ctc_v2l_optimizer, ctc_criterion):
+    def train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer, ctc_v2l_optimizer,
+              ctc_criterion):
         epoch_loss = 0
         model.train()
         num_batches = hyp_params.n_train // hyp_params.batch_size
         proc_loss, proc_size = 0, 0
         start_time = time.time()
-        for i_batch, (batch_X, batch_Y, batch_META) in enumerate(train_loader):
+        for i_batch, (batch_X, batch_Y, batch_META, batch_MASK) in enumerate(train_loader):
             sample_ind, text, audio, vision = batch_X
-            eval_attr = batch_Y.squeeze(-1)   # if num of labels is 1
-            
+            eval_attr = batch_Y.squeeze(-1)  # if num of labels is 1
+            labeled_mask = batch_MASK
+
             model.zero_grad()
             if ctc_criterion is not None:
                 ctc_a2l_module.zero_grad()
                 ctc_v2l_module.zero_grad()
-                
+
             if hyp_params.use_cuda:
                 with torch.cuda.device(0):
-                    text, audio, vision, eval_attr = text.cuda(), audio.cuda(), vision.cuda(), eval_attr.cuda()
+                    text, audio, vision, eval_attr, labeled_mask = text.cuda(), audio.cuda(), vision.cuda(), eval_attr.cuda(), labeled_mask.cuda()
                     if hyp_params.dataset == 'iemocap':
                         eval_attr = eval_attr.long()
-            
+
             batch_size = text.size(0)
             batch_chunk = hyp_params.batch_chunk
-            
+
             ######## CTC STARTS ######## Do not worry about this if not working on CTC
             if ctc_criterion is not None:
                 ctc_a2l_net = nn.DataParallel(ctc_a2l_module) if batch_size > 10 else ctc_a2l_module
                 ctc_v2l_net = nn.DataParallel(ctc_v2l_module) if batch_size > 10 else ctc_v2l_module
 
-                audio, a2l_position = ctc_a2l_net(audio) # audio now is the aligned to text
+                audio, a2l_position = ctc_a2l_net(audio)  # audio now is the aligned to text
                 vision, v2l_position = ctc_v2l_net(vision)
-                
+
                 ## Compute the ctc loss
                 l_len, a_len, v_len = hyp_params.l_len, hyp_params.a_len, hyp_params.v_len
                 # Output Labels
-                l_position = torch.tensor([i+1 for i in range(l_len)]*batch_size).int().cpu()
+                l_position = torch.tensor([i + 1 for i in range(l_len)] * batch_size).int().cpu()
                 # Specifying each output length
-                l_length = torch.tensor([l_len]*batch_size).int().cpu()
+                l_length = torch.tensor([l_len] * batch_size).int().cpu()
                 # Specifying each input length
-                a_length = torch.tensor([a_len]*batch_size).int().cpu()
-                v_length = torch.tensor([v_len]*batch_size).int().cpu()
-                
-                ctc_a2l_loss = ctc_criterion(a2l_position.transpose(0,1).cpu(), l_position, a_length, l_length)
-                ctc_v2l_loss = ctc_criterion(v2l_position.transpose(0,1).cpu(), l_position, v_length, l_length)
+                a_length = torch.tensor([a_len] * batch_size).int().cpu()
+                v_length = torch.tensor([v_len] * batch_size).int().cpu()
+
+                ctc_a2l_loss = ctc_criterion(a2l_position.transpose(0, 1).cpu(), l_position, a_length, l_length)
+                ctc_v2l_loss = ctc_criterion(v2l_position.transpose(0, 1).cpu(), l_position, v_length, l_length)
                 ctc_loss = ctc_a2l_loss + ctc_v2l_loss
                 ctc_loss = ctc_loss.cuda() if hyp_params.use_cuda else ctc_loss
             else:
                 ctc_loss = 0
             ######## CTC ENDS ########
-                
+
             combined_loss = 0
             net = nn.DataParallel(model) if batch_size > 10 else model
             if batch_chunk > 1:
@@ -141,18 +142,33 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 audio_chunks = audio.chunk(batch_chunk, dim=0)
                 vision_chunks = vision.chunk(batch_chunk, dim=0)
                 eval_attr_chunks = eval_attr.chunk(batch_chunk, dim=0)
-                
+                labeled_mask_chunks = labeled_mask.chunk(batch_chunk, dim=0)
+
                 for i in range(batch_chunk):
                     text_i, audio_i, vision_i = text_chunks[i], audio_chunks[i], vision_chunks[i]
                     eval_attr_i = eval_attr_chunks[i]
+                    labeled_mask_i = labeled_mask_chunks[i]
                     preds_i, hiddens_i = net(text_i, audio_i, vision_i)
-                    
+
                     if hyp_params.dataset == 'iemocap':
                         preds_i = preds_i.view(-1, 2)
                         eval_attr_i = eval_attr_i.view(-1)
-                    raw_loss_i = criterion(preds_i, eval_attr_i) / batch_chunk
+
+                    # Calculate loss for labeled data
+                    labeled_loss = criterion(preds_i[labeled_mask_i], eval_attr_i[labeled_mask_i])
+
+                    # Generate pseudo-labels for unlabeled data
+                    with torch.no_grad():
+                        pseudo_labels = preds_i[~labeled_mask_i].detach()
+                        confidence, predicted = torch.max(F.softmax(pseudo_labels, dim=1), dim=1)
+                        mask = confidence > hyp_params.pseudolabel_threshold
+                        pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], predicted[mask])
+
+                    # Combine losses
+                    raw_loss_i = (labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss) / batch_chunk
                     raw_loss += raw_loss_i
                     raw_loss_i.backward()
+
                 ctc_loss.backward()
                 combined_loss = raw_loss + ctc_loss
             else:
@@ -160,19 +176,31 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 if hyp_params.dataset == 'iemocap':
                     preds = preds.view(-1, 2)
                     eval_attr = eval_attr.view(-1)
-                raw_loss = criterion(preds, eval_attr)
+
+                # Calculate loss for labeled data
+                labeled_loss = criterion(preds[labeled_mask], eval_attr[labeled_mask])
+
+                # Generate pseudo-labels for unlabeled data
+                with torch.no_grad():
+                    pseudo_labels = preds[~labeled_mask].detach()
+                    confidence, predicted = torch.max(F.softmax(pseudo_labels, dim=1), dim=1)
+                    mask = confidence > hyp_params.pseudolabel_threshold
+                    pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], predicted[mask])
+
+                # Combine losses
+                raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
                 combined_loss = raw_loss + ctc_loss
                 combined_loss.backward()
-            
+
             if ctc_criterion is not None:
                 torch.nn.utils.clip_grad_norm_(ctc_a2l_module.parameters(), hyp_params.clip)
                 torch.nn.utils.clip_grad_norm_(ctc_v2l_module.parameters(), hyp_params.clip)
                 ctc_a2l_optimizer.step()
                 ctc_v2l_optimizer.step()
-            
+
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
             optimizer.step()
-            
+
             proc_loss += raw_loss.item() * batch_size
             proc_size += batch_size
             epoch_loss += combined_loss.item() * batch_size
@@ -183,47 +211,49 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                       format(epoch, i_batch, num_batches, elapsed_time * 1000 / hyp_params.log_interval, avg_loss))
                 proc_loss, proc_size = 0, 0
                 start_time = time.time()
-                
+
         return epoch_loss / hyp_params.n_train
 
     def evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=False):
         model.eval()
         loader = test_loader if test else valid_loader
         total_loss = 0.0
-    
+
         results = []
         truths = []
 
         with torch.no_grad():
-            for i_batch, (batch_X, batch_Y, batch_META) in enumerate(loader):
+            for i_batch, (batch_X, batch_Y, batch_META, batch_MASK) in enumerate(loader):
                 sample_ind, text, audio, vision = batch_X
-                eval_attr = batch_Y.squeeze(dim=-1) # if num of labels is 1
-            
+                eval_attr = batch_Y.squeeze(dim=-1)  # if num of labels is 1
+                labeled_mask = batch_MASK
+
                 if hyp_params.use_cuda:
                     with torch.cuda.device(0):
-                        text, audio, vision, eval_attr = text.cuda(), audio.cuda(), vision.cuda(), eval_attr.cuda()
+                        text, audio, vision, eval_attr, labeled_mask = text.cuda(), audio.cuda(), vision.cuda(), eval_attr.cuda(), labeled_mask.cuda()
                         if hyp_params.dataset == 'iemocap':
                             eval_attr = eval_attr.long()
-                        
+
                 batch_size = text.size(0)
-                
+
                 if (ctc_a2l_module is not None) and (ctc_v2l_module is not None):
                     ctc_a2l_net = nn.DataParallel(ctc_a2l_module) if batch_size > 10 else ctc_a2l_module
                     ctc_v2l_net = nn.DataParallel(ctc_v2l_module) if batch_size > 10 else ctc_v2l_module
-                    audio, _ = ctc_a2l_net(audio)     # audio aligned to text
-                    vision, _ = ctc_v2l_net(vision)   # vision aligned to text
-                
+                    audio, _ = ctc_a2l_net(audio)  # audio aligned to text
+                    vision, _ = ctc_v2l_net(vision)  # vision aligned to text
+
                 net = nn.DataParallel(model) if batch_size > 10 else model
                 preds, _ = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
                     preds = preds.view(-1, 2)
                     eval_attr = eval_attr.view(-1)
-                total_loss += criterion(preds, eval_attr).item() * batch_size
+
+                total_loss += criterion(preds[labeled_mask], eval_attr[labeled_mask]).item() * batch_size
 
                 # Collect the results into dictionary
                 results.append(preds)
                 truths.append(eval_attr)
-                
+
         avg_loss = total_loss / (hyp_params.n_test if test else hyp_params.n_valid)
 
         results = torch.cat(results)
@@ -233,10 +263,17 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
     best_valid = 1e8
     for epoch in range(1, hyp_params.num_epochs+1):
         start = time.time()
+        model.train()
         train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer, ctc_v2l_optimizer, ctc_criterion)
+        # Update pseudo-labels
+        if epoch % hyp_params.pseudolabel_update_interval == 0:
+            update_pseudolabels(model, train_loader, hyp_params)
+        # Evaluate on validation set
         val_loss, _, _ = evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=False)
+
+        # Evaluate on test set
         test_loss, _, _ = evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=True)
-        
+
         end = time.time()
         duration = end-start
         scheduler.step(val_loss)    # Decay learning rate by validation loss
@@ -262,3 +299,27 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
     sys.stdout.flush()
     input('[Press Any Key to start another run]')
+
+def update_pseudolabels(model, train_loader, hyp_params):
+    model.eval()
+    with torch.no_grad():
+        for i_batch, (batch_X, batch_Y, batch_META, batch_MASK) in enumerate(train_loader):
+            sample_ind, text, audio, vision = batch_X
+            labeled_mask = batch_MASK
+
+            if hyp_params.use_cuda:
+                with torch.cuda.device(0):
+                    text, audio, vision = text.cuda(), audio.cuda(), vision.cuda()
+
+            net = nn.DataParallel(model) if text.size(0) > 10 else model
+            preds, _ = net(text, audio, vision)
+
+            # Generate new pseudo-labels for unlabeled data
+            unlabeled_preds = preds[~labeled_mask]
+            confidence, new_labels = torch.max(F.softmax(unlabeled_preds, dim=1), dim=1)
+            mask = confidence > hyp_params.pseudolabel_threshold
+
+            # Update the dataset with new pseudo-labels
+            train_loader.dataset.update_pseudolabels(sample_ind[~labeled_mask][mask], new_labels[mask])
+
+    model.train()

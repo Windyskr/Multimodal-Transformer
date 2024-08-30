@@ -57,3 +57,81 @@ class Multimodal_Datasets(Dataset):
             Y = torch.argmax(Y, dim=-1)
         return X, Y, META        
 
+class PseudolabelMultimodalDataset(Dataset):
+    def __init__(self, dataset_path, data='mosei_senti', split_type='train', if_align=False, labeled_ratio=0.5):
+        super(PseudolabelMultimodalDataset, self).__init__()
+        self.dataset_path = dataset_path
+        self.data = data
+        self.split_type = split_type
+        self.if_align = if_align
+        self.labeled_ratio = labeled_ratio
+
+        self.load_data()
+        self.process_data()
+
+    def load_data(self):
+        dataset_path = os.path.join(self.dataset_path,
+                                    self.data + '_data.pkl' if self.if_align else self.data + '_data_noalign.pkl')
+        dataset = pickle.load(open(dataset_path, 'rb'))
+
+        self.vision = torch.tensor(dataset[self.split_type]['vision'].astype(np.float32)).cpu().detach()
+        self.text = torch.tensor(dataset[self.split_type]['text'].astype(np.float32)).cpu().detach()
+        self.audio = dataset[self.split_type]['audio'].astype(np.float32)
+        self.audio[self.audio == -np.inf] = 0
+        self.audio = torch.tensor(self.audio).cpu().detach()
+        self.labels = torch.tensor(dataset[self.split_type]['labels'].astype(np.float32)).cpu().detach()
+
+        self.meta = dataset[self.split_type]['id'] if 'id' in dataset[self.split_type].keys() else None
+
+    def process_data(self):
+        if self.split_type == 'train':
+            # Shuffle the data
+            perm = torch.randperm(len(self.labels))
+            self.vision = self.vision[perm]
+            self.text = self.text[perm]
+            self.audio = self.audio[perm]
+            self.labels = self.labels[perm]
+            if self.meta is not None:
+                self.meta = self.meta[perm]
+
+            # Split into labeled and unlabeled
+            n_labeled = int(len(self.labels) * self.labeled_ratio)
+            self.labeled_mask = torch.zeros(len(self.labels), dtype=torch.bool)
+            self.labeled_mask[:n_labeled] = True
+
+            # For unlabeled data, set labels to -1
+            self.labels[~self.labeled_mask] = -1
+        else:
+            # For validation and test sets, all data is labeled
+            self.labeled_mask = torch.ones(len(self.labels), dtype=torch.bool)
+
+    def update_pseudolabels(self, indices, new_labels):
+        """
+        Update the labels for unlabeled data with new pseudo-labels.
+
+        Args:
+            indices (list): Indices of the samples to update
+            new_labels (torch.Tensor): New pseudo-labels for the samples
+        """
+        for idx, new_label in zip(indices, new_labels):
+            if not self.labeled_mask[idx]:
+                self.labels[idx] = new_label
+
+    def get_unlabeled_indices(self):
+        """
+        Return the indices of unlabeled samples.
+        """
+        return torch.where(~self.labeled_mask)[0]
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, index):
+        X = (index, self.text[index], self.audio[index], self.vision[index])
+        Y = self.labels[index]
+        META = (0,0,0) if self.meta is None else (self.meta[index][0], self.meta[index][1], self.meta[index][2])
+        if self.data == 'mosi':
+            META = (self.meta[index][0].decode('UTF-8'), self.meta[index][1].decode('UTF-8'), self.meta[index][2].decode('UTF-8'))
+        if self.data == 'iemocap':
+            Y = torch.argmax(Y, dim=-1)
+        return X, Y, META, self.labeled_mask[index].item()  # Convert bool to int

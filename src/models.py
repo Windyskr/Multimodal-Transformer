@@ -89,7 +89,7 @@ class MULTModel(nn.Module):
                                   embed_dropout=self.embed_dropout,
                                   attn_mask=self.attn_mask)
             
-    def forward(self, x_l, x_a, x_v):
+    def forward(self, x_l, x_a, x_v,temperature=1.0):
         """
         text, audio, and vision should have dimension [batch_size, seq_len, n_features]
         """
@@ -143,4 +143,11 @@ class MULTModel(nn.Module):
         last_hs_proj += last_hs
         
         output = self.out_layer(last_hs_proj)
-        return output, last_hs
+
+        # Apply temperature scaling
+        scaled_output = output / temperature
+
+        # For regression tasks (e.g., MOSEI), we can use the absolute difference from the mean as a crude confidence estimate
+        confidence = 1 - torch.abs(scaled_output - scaled_output.mean()) / (scaled_output.max() - scaled_output.min())
+
+        return scaled_output, confidence, last_hs

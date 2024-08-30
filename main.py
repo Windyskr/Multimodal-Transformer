@@ -5,6 +5,18 @@ from torch.utils.data import DataLoader
 from src import train
 
 
+def collate_fn(batch):
+    # Separate the batch into its components
+    indices = [item[0][0] for item in batch]
+    texts = torch.stack([item[0][1] for item in batch])
+    audios = torch.stack([item[0][2] for item in batch])
+    visions = torch.stack([item[0][3] for item in batch])
+    labels = torch.stack([item[1] for item in batch])
+    metas = [item[2] for item in batch]
+    masks = torch.tensor([item[3] for item in batch])
+
+    return (indices, texts, audios, visions), labels, metas, masks
+
 parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
 parser.add_argument('-f', default='', type=str)
 
@@ -75,6 +87,12 @@ parser.add_argument('--no_cuda', action='store_true',
                     help='do not use cuda')
 parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
+parser.add_argument('--labeled_ratio', type=float, default=0.5,
+                    help='ratio of labeled data in training set (default: 0.5)')
+parser.add_argument('--pseudolabel_threshold', type=float, default=0.95,
+                    help='confidence threshold for pseudo-labeling (default: 0.95)')
+parser.add_argument('--pseudolabel_update_interval', type=int, default=100,
+                    help='number of iterations between pseudo-label updates (default: 100)')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -119,9 +137,9 @@ train_data = get_data(args, dataset, 'train')
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
-train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
+train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
+valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
 
 print('Finish loading the data....')
 if not args.aligned:

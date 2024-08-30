@@ -33,7 +33,13 @@ def eval_mosei_senti(results, truths, exclude_zero=False):
     test_truth = truths.view(-1).cpu().detach().numpy()
 
     non_zeros = np.array([i for i, e in enumerate(test_truth) if e != 0 or (not exclude_zero)])
+    # 过滤掉伪标签样本（伪标签为-1）
+    valid_samples = test_truth != -1
+    test_preds = test_preds[valid_samples & non_zeros]
+    test_truth = test_truth[valid_samples & non_zeros]
 
+    # 更新non_zeros数组
+    non_zeros = np.arange(len(test_truth))
     test_preds_a7 = np.clip(test_preds, a_min=-3., a_max=3.)
     test_truth_a7 = np.clip(test_truth, a_min=-3., a_max=3.)
     test_preds_a5 = np.clip(test_preds, a_min=-2., a_max=2.)
