@@ -1,9 +1,8 @@
-# collate.py
 import torch
 
 def custom_collate(batch):
-    # 分离数据、标签和元数据
-    data, labels, meta = zip(*batch)
+    # 分离数据、标签、元数据和是否有标签
+    data, labels, meta, is_labeled = zip(*batch)
 
     # 处理数据（X）
     data_processed = []
@@ -24,4 +23,7 @@ def custom_collate(batch):
         else:
             meta_processed.append(m)
 
-    return data_processed, labels, meta_processed
+    # 处理 is_labeled
+    is_labeled = torch.tensor(is_labeled)
+
+    return data_processed, labels, meta_processed, is_labeled
