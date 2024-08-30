@@ -124,6 +124,8 @@ if torch.cuda.is_available():
     else:
         torch.cuda.manual_seed(args.seed)
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        device = torch.device('cuda:0')
+        generator = torch.Generator(device=device)
         print(f"Running on {torch.cuda.get_device_name(0)}")
         use_cuda = True
 
