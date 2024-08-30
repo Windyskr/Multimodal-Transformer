@@ -1,6 +1,7 @@
 import torch
 import os
 from src.dataset import Multimodal_Datasets
+from src.collate import custom_collate
 
 
 def get_data(args, dataset, split='train'):
