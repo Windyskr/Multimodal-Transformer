@@ -73,93 +73,52 @@ class Multimodal_Datasets(Dataset):
         return X, Y, META
 
 
-class SemiSupervisedMultimodalDataset(Dataset):
+class SemiSupervisedMultimodalDataset(Multimodal_Datasets):
     def __init__(self, dataset_path, data='mosei_senti', split_type='train', if_align=False,
                  labeled_ratio=0.1, dropout_l=0.0, dropout_a=0.0, dropout_v=0.0):
-        super(SemiSupervisedMultimodalDataset, self).__init__()
+        super().__init__(dataset_path, data, split_type, if_align, dropout_l, dropout_a, dropout_v)
 
-        self.dataset_path = os.path.join(dataset_path, data + '_data.pkl' if if_align else data + '_data_noalign.pkl')
-        self.dataset = pickle.load(open(self.dataset_path, 'rb'))
-        self.split_type = split_type
         self.labeled_ratio = labeled_ratio
-
-        # Load data
-        self.vision = torch.tensor(self.dataset[split_type]['vision'].astype(np.float32)).cpu().detach()
-        self.text = torch.tensor(self.dataset[split_type]['text'].astype(np.float32)).cpu().detach()
-        self.audio = torch.tensor(self.dataset[split_type]['audio'].astype(np.float32)).cpu().detach()
-        self.labels = torch.tensor(self.dataset[split_type]['labels'].astype(np.float32)).cpu().detach()
-
-        self.data = data
-        self.n_modalities = 3
-        self.dropout_l = dropout_l
-        self.dropout_a = dropout_a
-        self.dropout_v = dropout_v
-        if self.apply_augmentation:
-            text, audio, vision = augment_data(text, audio, vision)
-        # Split data into labeled and unlabeled sets
         self.split_labeled_unlabeled()
 
     def split_labeled_unlabeled(self):
         total_samples = len(self.labels)
         labeled_samples = int(total_samples * self.labeled_ratio)
 
-        # Randomly select labeled samples
-        labeled_indices = np.random.choice(total_samples, labeled_samples, replace=False)
-        unlabeled_indices = np.setdiff1d(np.arange(total_samples), labeled_indices)
-
-        self.labeled_indices = labeled_indices
-        self.unlabeled_indices = unlabeled_indices
-
-    def get_labeled_data(self):
-        return (self.text[self.labeled_indices],
-                self.audio[self.labeled_indices],
-                self.vision[self.labeled_indices],
-                self.labels[self.labeled_indices])
-
-    def get_unlabeled_data(self):
-        return (self.text[self.unlabeled_indices],
-                self.audio[self.unlabeled_indices],
-                self.vision[self.unlabeled_indices])
-
-    def apply_dropout(self, x, dropout_rate):
-        if dropout_rate == 0:
-            return x
-        mask = torch.bernoulli(torch.full(x.shape[:2], 1 - dropout_rate)).unsqueeze(-1)
-        return x * mask
-
-    def __len__(self):
-        return len(self.labels)
+        # 随机选择有标签样本
+        self.labeled_indices = np.random.choice(total_samples, labeled_samples, replace=False)
+        self.unlabeled_indices = np.setdiff1d(np.arange(total_samples), self.labeled_indices)
 
     def __getitem__(self, index):
-        text = self.apply_dropout(self.text[index], self.dropout_l)
-        audio = self.apply_dropout(self.audio[index], self.dropout_a)
-        vision = self.apply_dropout(self.vision[index], self.dropout_v)
+        X, Y, META = super().__getitem__(index)
 
         if index in self.labeled_indices:
-            label = self.labels[index]
             is_labeled = True
         else:
-            label = torch.tensor(-1)  # Placeholder for unlabeled data
             is_labeled = False
+            Y = torch.tensor(-1)  # 为无标签数据使用占位符标签
 
-        return {
-            'text': text,
-            'audio': audio,
-            'vision': vision,
-            'label': label,
-            'is_labeled': is_labeled
-        }
+        return X, Y, META, is_labeled
 
 
 # Function to create data loaders
-def get_semi_supervised_data_loaders(args):
-    labeled_data = get_data(args, args.dataset, 'train')
-    unlabeled_data = get_data(args, args.dataset, 'train')  # 使用相同的训练数据作为无标签数据
+def get_semi_supervised_data(args, dataset, split='train'):
+    alignment = 'a' if args.aligned else 'na'
+    data_path = os.path.join(args.data_path, dataset) + f'_{split}_{alignment}_semi.dt'
 
-    labeled_loader = DataLoader(labeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
-    unlabeled_loader = DataLoader(unlabeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+    if not os.path.exists(data_path):
+        print(f"  - Creating new semi-supervised {split} data")
+        data = SemiSupervisedMultimodalDataset(args.data_path, dataset, split, args.aligned,
+                                               args.labeled_ratio, args.dropout_l, args.dropout_a, args.dropout_v)
+        torch.save(data, data_path)
+    else:
+        print(f"  - Found cached semi-supervised {split} data")
+        data = torch.load(data_path)
+        data.dropout_l = args.dropout_l
+        data.dropout_a = args.dropout_a
+        data.dropout_v = args.dropout_v
 
-    return labeled_loader, unlabeled_loader
+    return data
 
 def get_data(args, dataset, split='train'):
     alignment = 'a' if args.aligned else 'na'

@@ -3,7 +3,7 @@ import argparse
 from src.utils import *
 from torch.utils.data import DataLoader
 from src import train
-from src.dataset import get_semi_supervised_data_loaders, get_data
+from src.dataset import get_semi_supervised_data
 from src.utils import custom_collate
 
 
@@ -140,12 +140,11 @@ if torch.cuda.is_available():
 
 print("Start loading the data....")
 
-labeled_loader, unlabeled_loader = get_semi_supervised_data_loaders(args)
-valid_data = get_data(args, dataset, 'valid')
-test_data = get_data(args, dataset, 'test')
+labeled_data = get_semi_supervised_data(args, args.dataset, 'train')
+unlabeled_data = get_semi_supervised_data(args, args.dataset, 'train')
 
-valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
-test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+labeled_loader = DataLoader(labeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+unlabeled_loader = DataLoader(unlabeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
 
 print('Finish loading the data....')
 if not args.aligned:
