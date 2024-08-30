@@ -7,13 +7,14 @@ from src import train
 
 def collate_fn(batch):
     # Separate the batch into its components
+    # use cuda
     indices = [item[0][0] for item in batch]
-    texts = torch.stack([item[0][1] for item in batch])
-    audios = torch.stack([item[0][2] for item in batch])
-    visions = torch.stack([item[0][3] for item in batch])
-    labels = torch.stack([item[1] for item in batch])
+    texts = torch.stack([item[0][1] for item in batch]).cuda()
+    audios = torch.stack([item[0][2] for item in batch]).cuda()
+    visions = torch.stack([item[0][3] for item in batch]).cuda()
+    labels = torch.stack([item[1] for item in batch]).cuda()
     metas = [item[2] for item in batch]
-    masks = torch.tensor([item[3] for item in batch])
+    masks = torch.tensor([item[3] for item in batch]).cuda()
 
     return (indices, texts, audios, visions), labels, metas, masks
 
