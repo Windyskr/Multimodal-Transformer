@@ -74,17 +74,23 @@ class PseudolabelMultimodalDataset(Dataset):
                                     self.data + '_data.pkl' if self.if_align else self.data + '_data_noalign.pkl')
         dataset = pickle.load(open(dataset_path, 'rb'))
 
-        self.vision = torch.tensor(dataset[self.split_type]['vision'].astype(np.float32)).cpu().detach()
-        self.text = torch.tensor(dataset[self.split_type]['text'].astype(np.float32)).cpu().detach()
+        self.vision = torch.tensor(dataset[self.split_type]['vision'].astype(np.float32)).cpu()
+        self.text = torch.tensor(dataset[self.split_type]['text'].astype(np.float32)).cpu()
         self.audio = dataset[self.split_type]['audio'].astype(np.float32)
         self.audio[self.audio == -np.inf] = 0
-        self.audio = torch.tensor(self.audio).cpu().detach()
-        self.labels = torch.tensor(dataset[self.split_type]['labels'].astype(np.float32)).cpu().detach()
+        self.audio = torch.tensor(self.audio).cpu()
+        self.labels = torch.tensor(dataset[self.split_type]['labels'].astype(np.float32)).cpu()
 
         self.meta = dataset[self.split_type]['id'] if 'id' in dataset[self.split_type].keys() else None
 
     def process_data(self):
         if self.split_type == 'train':
+            # Move all tensors to CPU
+            self.vision = self.vision.cpu()
+            self.text = self.text.cpu()
+            self.audio = self.audio.cpu()
+            self.labels = self.labels.cpu()
+
             # Shuffle the data
             perm = torch.randperm(len(self.labels))
             self.vision = self.vision[perm]
@@ -92,7 +98,7 @@ class PseudolabelMultimodalDataset(Dataset):
             self.audio = self.audio[perm]
             self.labels = self.labels[perm]
             if self.meta is not None:
-                self.meta = self.meta[perm]
+                self.meta = [self.meta[i] for i in perm]  # Assuming meta is a list
 
             # Split into labeled and unlabeled
             n_labeled = int(len(self.labels) * self.labeled_ratio)
