@@ -104,7 +104,7 @@ if valid_partial_mode == 0:
 elif valid_partial_mode != 1:
     raise ValueError("You can only choose one of {l/v/a}only.")
 
-use_cuda = False
+use_cuda = True
 
 output_dim_dict = {
     'mosi': 1,
