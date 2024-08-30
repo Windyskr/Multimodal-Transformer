@@ -112,7 +112,7 @@ class PseudolabelMultimodalDataset(Dataset):
             print(f"Labeled mask sum: {self.labeled_mask.int().sum().item()}")
 
             # Convert to byte tensor, perform logical not, then convert back to bool
-            unlabeled_mask = ~self.labeled_mask
+            unlabeled_mask = torch.logical_not(self.labeled_mask)
             unlabeled_mask = unlabeled_mask.bool()  # This line was incorrect
 
             # For unlabeled data, set labels to -1
