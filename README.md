@@ -1,6 +1,6 @@
 ![Python 3.6](https://img.shields.io/badge/python-3.6-green.svg)  
 
-# Multimodal Transformer for Unaligned Multimodal Language Sequences
+# Multimodal Transformer for Unaligned Multimodal Language Sequences with Semi
 
 > Pytorch implementation for learning Multimodal Transformer for unaligned multimodal language sequences.
 
