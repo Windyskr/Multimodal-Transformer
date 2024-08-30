@@ -103,8 +103,8 @@ class PseudolabelMultimodalDataset(Dataset):
             self.labels = self.labels.cpu().float()
 
             # Shuffle the data
-            perm = perm.to(self.vision.device)
             perm = torch.randperm(len(self.labels))
+            perm = perm.to(self.vision.device)
             self.vision = self.vision[perm]
             self.text = self.text[perm]
             self.audio = self.audio[perm]
