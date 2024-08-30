@@ -1,4 +1,7 @@
+# src/collate.py
+
 import torch
+
 
 def custom_collate(batch):
     # 分离数据、标签、元数据和是否有标签
@@ -13,7 +16,8 @@ def custom_collate(batch):
             data_processed.append(d)
 
     # 处理标签（Y）
-    labels = torch.stack(labels) if isinstance(labels[0], torch.Tensor) else labels
+    if isinstance(labels[0], torch.Tensor):
+        labels = torch.stack([label.cpu() for label in labels])  # 确保所有标签都在 CPU 上
 
     # 处理元数据（META）
     meta_processed = []

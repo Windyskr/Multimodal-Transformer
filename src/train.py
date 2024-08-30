@@ -55,7 +55,10 @@ def train_model(settings, hyp_params, labeled_loader, unlabeled_loader, valid_lo
                 l_data, l_labels, l_meta, _ = next(labeled_iter)
 
             sample_ind, l_text, l_audio, l_vision = l_data
-            l_text, l_audio, l_vision, l_labels = l_text.cuda(), l_audio.cuda(), l_vision.cuda(), l_labels.cuda()
+            l_text = l_text.cuda() if hyp_params.use_cuda else l_text
+            l_audio = l_audio.cuda() if hyp_params.use_cuda else l_audio
+            l_vision = l_vision.cuda() if hyp_params.use_cuda else l_vision
+            l_labels = l_labels.cuda() if hyp_params.use_cuda else l_labels
 
             # Unlabeled data
             try:
@@ -65,7 +68,9 @@ def train_model(settings, hyp_params, labeled_loader, unlabeled_loader, valid_lo
                 u_data, _, u_meta, _ = next(unlabeled_iter)
 
             u_sample_ind, u_text, u_audio, u_vision = u_data
-            u_text, u_audio, u_vision = u_text.cuda(), u_audio.cuda(), u_vision.cuda()
+            u_text = u_text.cuda() if hyp_params.use_cuda else u_text
+            u_audio = u_audio.cuda() if hyp_params.use_cuda else u_audio
+            u_vision = u_vision.cuda() if hyp_params.use_cuda else u_vision
 
             # Forward pass
             l_preds, l_hiddens = model(l_text, l_audio, l_vision)
@@ -105,7 +110,10 @@ def train_model(settings, hyp_params, labeled_loader, unlabeled_loader, valid_lo
         with torch.no_grad():
             for i_batch, (batch_data, batch_labels, _, _) in enumerate(data_loader):
                 sample_ind, text, audio, vision = batch_data
-                text, audio, vision, labels = text.cuda(), audio.cuda(), vision.cuda(), batch_labels.cuda()
+                text = text.cuda() if hyp_params.use_cuda else text
+                audio = audio.cuda() if hyp_params.use_cuda else audio
+                vision = vision.cuda() if hyp_params.use_cuda else vision
+                labels = batch_labels.cuda() if hyp_params.use_cuda else batch_labels()
 
                 preds, _ = model(text, audio, vision)
                 total_loss += criterion(preds, labels).item()
