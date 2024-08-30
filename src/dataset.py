@@ -66,7 +66,7 @@ class Multimodal_Datasets(Dataset):
         return X, Y, META
 
 
-class PseudolabelMultimodalDataset(Dataset):
+class PseudolabelMultimodalDataset(Multimodal_Datasets):
     def __init__(self, dataset_path, data='mosei_senti', split_type='train', if_align=False, labeled_ratio=0.5):
         super(PseudolabelMultimodalDataset, self).__init__()
         self.dataset_path = dataset_path
