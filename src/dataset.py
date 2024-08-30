@@ -111,8 +111,11 @@ class PseudolabelMultimodalDataset(Dataset):
             print(f"Labeled mask shape: {self.labeled_mask.shape}")
             print(f"Labeled mask sum: {self.labeled_mask.int().sum().item()}")
 
+            # Convert to byte tensor, perform logical not, then convert back to bool
+            unlabeled_mask = ~self.labeled_mask.to(torch.uint8)
+            unlabeled_mask = unlabeled_mask.bool()
+
             # For unlabeled data, set labels to -1
-            unlabeled_mask = ~self.labeled_mask  # 使用 ~ 操作符进行逻辑非操作
             self.labels[unlabeled_mask] = -1
 
             print(f"Labels dtype: {self.labels.dtype}")
