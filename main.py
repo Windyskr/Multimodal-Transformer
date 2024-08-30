@@ -123,6 +123,7 @@ if torch.cuda.is_available():
     else:
         torch.cuda.manual_seed(args.seed)
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        print(f"Running on {torch.cuda.get_device_name(0)}")
         use_cuda = True
 
 ####################################################################
@@ -168,4 +169,3 @@ hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
 if __name__ == '__main__':
     import torch
     test_loss = train.initiate(hyp_params, train_loader, valid_loader, test_loader)
-
