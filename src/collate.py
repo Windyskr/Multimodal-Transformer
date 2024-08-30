@@ -17,8 +17,14 @@ def custom_collate(batch):
 
     # 处理标签（Y）
     if isinstance(labels[0], torch.Tensor):
-        # 将所有标签转换为浮点型
-        labels = torch.stack([label.float().cpu() for label in labels])
+        # 检查所有标签的维度
+        dims = [label.dim() for label in labels]
+        if all(dim == dims[0] for dim in dims):
+            # 如果所有标签维度相同，直接堆叠
+            labels = torch.stack([label.float().cpu() for label in labels])
+        else:
+            # 如果维度不同，先将所有标签展平为一维，然后堆叠
+            labels = torch.stack([label.float().cpu().view(-1) for label in labels])
     else:
         # 如果标签不是张量，将其转换为浮点型张量
         labels = torch.tensor(labels, dtype=torch.float32)
