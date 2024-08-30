@@ -87,7 +87,7 @@ class PseudolabelMultimodalDataset(Dataset):
 
     def process_data(self):
         if self.split_type == 'train':
-            # Move all tensors to CPU
+            # Ensure all tensors are on CPU
             self.vision = self.vision.cpu()
             self.text = self.text.cpu()
             self.audio = self.audio.cpu()
@@ -104,27 +104,26 @@ class PseudolabelMultimodalDataset(Dataset):
 
             # Split into labeled and unlabeled
             n_labeled = int(len(self.labels) * self.labeled_ratio)
-            self.labeled_mask = torch.zeros(len(self.labels), dtype=torch.bool)
+            self.labeled_mask = torch.zeros(len(self.labels), dtype=torch.bool, device='cpu')
             self.labeled_mask[:n_labeled] = True
 
             print(f"Labeled mask dtype: {self.labeled_mask.dtype}")
             print(f"Labeled mask shape: {self.labeled_mask.shape}")
-            print(f"Labeled mask sum: {self.labeled_mask.sum()}")
+            print(f"Labeled mask sum: {self.labeled_mask.int().sum().item()}")
 
             # For unlabeled data, set labels to -1
-            unlabeled_mask = torch.logical_not(self.labeled_mask)
-            self.labels[unlabeled_mask] = -1
+            self.labels[~self.labeled_mask] = -1
 
             print(f"Labels dtype: {self.labels.dtype}")
             print(f"Labels shape: {self.labels.shape}")
-            print(f"Number of -1 labels: {(self.labels == -1).sum()}")
+            print(f"Number of -1 labels: {(self.labels == -1).int().sum().item()}")
 
         else:
             # For validation and test sets, all data is labeled
-            self.labeled_mask = torch.ones(len(self.labels), dtype=torch.bool)
+            self.labeled_mask = torch.ones(len(self.labels), dtype=torch.bool, device='cpu')
 
-        # Ensure labeled_mask is a boolean tensor
-        self.labeled_mask = self.labeled_mask.bool()
+        # Ensure labeled_mask is a boolean tensor on CPU
+        self.labeled_mask = self.labeled_mask.bool().cpu()
 
     def update_pseudolabels(self, indices, new_labels):
         """

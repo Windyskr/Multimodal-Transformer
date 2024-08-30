@@ -6,6 +6,7 @@ from src.dataset import Multimodal_Datasets, PseudolabelMultimodalDataset
 def get_data(args, dataset, split='train'):
     alignment = 'a' if args.aligned else 'na'
     data_path = os.path.join(args.data_path, dataset) + f'_{split}_{alignment}.dt'
+    print(f"Labeled ratio in get_data: {args.labeled_ratio}")
     if not os.path.exists(data_path):
         print(f"  - Creating new {split} data")
         data = PseudolabelMultimodalDataset(args.data_path, dataset, split, args.aligned, args.labeled_ratio)
@@ -17,8 +18,6 @@ def get_data(args, dataset, split='train'):
             print(f"  - Converting cached data to PseudolabelMultimodalDataset")
             data = PseudolabelMultimodalDataset(args.data_path, dataset, split, args.aligned, args.labeled_ratio)
             torch.save(data, data_path)
-
-    print(f"Labeled ratio in get_data: {args.labeled_ratio}")
     return data
 
 
