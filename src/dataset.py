@@ -67,19 +67,7 @@ class Multimodal_Datasets(Dataset):
              self.apply_dropout(self.audio[index], self.dropout_a),
              self.apply_dropout(self.vision[index], self.dropout_v))
         Y = self.labels[index]
-
-        if self.meta is None:
-            META = (0, 0, 0)
-        else:
-            META = (self.meta[index][0], self.meta[index][1], self.meta[index][2])
-
-        if self.data == 'iemocap':
-            Y = torch.argmax(Y, dim=-1)
-
-        # 确保所有返回的数据都是 PyTorch 张量或基本数据类型
-        X = tuple(x.cpu().detach() if isinstance(x, torch.Tensor) else x for x in X)
-        Y = Y.cpu().detach() if isinstance(Y, torch.Tensor) else Y
-        META = tuple(m.decode('utf-8') if isinstance(m, bytes) else m for m in META)
+        META = self.meta[index] if self.meta is not None else (0, 0, 0)
 
         return X, Y, META
 

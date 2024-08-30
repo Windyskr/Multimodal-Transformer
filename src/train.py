@@ -60,12 +60,12 @@ def train_model(settings, hyp_params, components, labeled_loader, unlabeled_load
         for i_batch in range(hyp_params.n_train // (2 * hyp_params.batch_size)):
             # labeled data
             labeled_batch = next(labeled_iter)
-            sample_ind, l_text, l_audio, l_vision, l_labels, l_meta = labeled_batch
+            (sample_ind, l_text, l_audio, l_vision), l_labels, l_meta = labeled_batch
             l_text, l_audio, l_vision, l_labels = l_text.cuda(), l_audio.cuda(), l_vision.cuda(), l_labels.cuda()
 
             # unlabeled data
             unlabeled_batch = next(unlabeled_iter)
-            u_sample_ind, u_text, u_audio, u_vision, _, u_meta = unlabeled_batch
+            (u_sample_ind, u_text, u_audio, u_vision), _, u_meta = unlabeled_batch
             u_text, u_audio, u_vision = u_text.cuda(), u_audio.cuda(), u_vision.cuda()
 
             # forward pass
