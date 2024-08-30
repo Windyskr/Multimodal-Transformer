@@ -17,6 +17,8 @@ def get_data(args, dataset, split='train'):
             print(f"  - Converting cached data to PseudolabelMultimodalDataset")
             data = PseudolabelMultimodalDataset(args.data_path, dataset, split, args.aligned, args.labeled_ratio)
             torch.save(data, data_path)
+
+    print(f"Labeled ratio in get_data: {args.labeled_ratio}")
     return data
 
 

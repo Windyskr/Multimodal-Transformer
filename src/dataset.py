@@ -66,6 +66,8 @@ class PseudolabelMultimodalDataset(Dataset):
         self.if_align = if_align
         self.labeled_ratio = labeled_ratio
 
+        print(f"Initializing PseudolabelMultimodalDataset with labeled_ratio: {self.labeled_ratio}")
+
         self.load_data()
         self.process_data()
 
@@ -105,8 +107,18 @@ class PseudolabelMultimodalDataset(Dataset):
             self.labeled_mask = torch.zeros(len(self.labels), dtype=torch.bool)
             self.labeled_mask[:n_labeled] = True
 
+            print(f"Labeled mask dtype: {self.labeled_mask.dtype}")
+            print(f"Labeled mask shape: {self.labeled_mask.shape}")
+            print(f"Labeled mask sum: {self.labeled_mask.sum()}")
+
             # For unlabeled data, set labels to -1
-            self.labels[~self.labeled_mask] = -1
+            unlabeled_mask = torch.logical_not(self.labeled_mask)
+            self.labels[unlabeled_mask] = -1
+
+            print(f"Labels dtype: {self.labels.dtype}")
+            print(f"Labels shape: {self.labels.shape}")
+            print(f"Number of -1 labels: {(self.labels == -1).sum()}")
+
         else:
             # For validation and test sets, all data is labeled
             self.labeled_mask = torch.ones(len(self.labels), dtype=torch.bool)
