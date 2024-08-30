@@ -4,6 +4,7 @@ import pickle
 import os
 from scipy import signal
 import torch
+from src.collate import custom_collate
 from src.data_augmentation import augment_data
 
 if torch.cuda.is_available():
