@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from src import train
 from src.dataset import get_semi_supervised_data
 from src.utils import custom_collate
+from src.dataset import get_semi_supervised_data_loaders, get_data
 
 
 parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
@@ -143,8 +144,15 @@ print("Start loading the data....")
 labeled_data = get_semi_supervised_data(args, args.dataset, 'train')
 unlabeled_data = get_semi_supervised_data(args, args.dataset, 'train')
 
-labeled_loader = DataLoader(labeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
-unlabeled_loader = DataLoader(unlabeled_data, batch_size=args.batch_size, shuffle=True, collate_fn=custom_collate)
+# 获取半监督数据加载器
+labeled_loader, unlabeled_loader = get_semi_supervised_data_loaders(args)
+
+# 获取验证集和测试集数据
+valid_data = get_data(args, args.dataset, 'valid')
+test_data = get_data(args, args.dataset, 'test')
+# 创建验证集和测试集的数据加载器
+valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate)
+test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate)
 
 print('Finish loading the data....')
 if not args.aligned:
@@ -167,13 +175,16 @@ hyp_params.batch_chunk = args.batch_chunk
 hyp_params.n_train = len(labeled_loader.dataset) + len(unlabeled_loader.dataset)
 hyp_params.n_labeled = len(labeled_loader.dataset)
 hyp_params.n_unlabeled = len(unlabeled_loader.dataset)
-# hyp_params.n_valid = len(
-# hyp_params.n_test = len(
+hyp_params.n_valid = len(valid_data)
+hyp_params.n_test = len(test_data)
 hyp_params.model = str.upper(args.model.strip())
 hyp_params.output_dim = output_dim_dict.get(dataset, 1)
 hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
-print(f"Labeled data: {args.n_labeled}, Unlabeled data: {args.n_unlabeled}")
+print(f"Labeled data: {len(labeled_loader.dataset)}, Unlabeled data: {len(unlabeled_loader.dataset)}")
+print(f"Validation data: {len(valid_data)}, Test data: {len(test_data)}")
 
 if __name__ == '__main__':
     test_loss = train.initiate(hyp_params, labeled_loader, unlabeled_loader, valid_loader, test_loader)
+
+
 
