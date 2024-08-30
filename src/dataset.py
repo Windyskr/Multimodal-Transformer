@@ -111,6 +111,9 @@ class PseudolabelMultimodalDataset(Dataset):
             # For validation and test sets, all data is labeled
             self.labeled_mask = torch.ones(len(self.labels), dtype=torch.bool)
 
+        # Ensure labeled_mask is a boolean tensor
+        self.labeled_mask = self.labeled_mask.bool()
+
     def update_pseudolabels(self, indices, new_labels):
         """
         Update the labels for unlabeled data with new pseudo-labels.
@@ -135,9 +138,10 @@ class PseudolabelMultimodalDataset(Dataset):
     def __getitem__(self, index):
         X = (index, self.text[index], self.audio[index], self.vision[index])
         Y = self.labels[index]
-        META = (0,0,0) if self.meta is None else (self.meta[index][0], self.meta[index][1], self.meta[index][2])
+        META = (0, 0, 0) if self.meta is None else (self.meta[index][0], self.meta[index][1], self.meta[index][2])
         if self.data == 'mosi':
-            META = (self.meta[index][0].decode('UTF-8'), self.meta[index][1].decode('UTF-8'), self.meta[index][2].decode('UTF-8'))
+            META = (self.meta[index][0].decode('UTF-8'), self.meta[index][1].decode('UTF-8'),
+                    self.meta[index][2].decode('UTF-8'))
         if self.data == 'iemocap':
             Y = torch.argmax(Y, dim=-1)
-        return X, Y, META, self.labeled_mask[index].item()  # Convert bool to int
+        return X, Y, META, self.labeled_mask[index].item()
