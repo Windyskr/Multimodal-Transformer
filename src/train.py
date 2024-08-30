@@ -71,7 +71,7 @@ def train_model(settings, hyp_params, labeled_loader, unlabeled_loader, valid_lo
             u_text = u_text.cuda() if hyp_params.use_cuda else u_text
             u_audio = u_audio.cuda() if hyp_params.use_cuda else u_audio
             u_vision = u_vision.cuda() if hyp_params.use_cuda else u_vision
-
+            l_labels = l_labels.float()
             # Forward pass
             l_preds, l_hiddens = model(l_text, l_audio, l_vision)
             u_preds, u_hiddens = model(u_text, u_audio, u_vision)
@@ -113,7 +113,7 @@ def train_model(settings, hyp_params, labeled_loader, unlabeled_loader, valid_lo
                 text = text.cuda() if hyp_params.use_cuda else text
                 audio = audio.cuda() if hyp_params.use_cuda else audio
                 vision = vision.cuda() if hyp_params.use_cuda else vision
-                labels = batch_labels.cuda() if hyp_params.use_cuda else batch_labels()
+                labels = batch_labels.float().cuda() if hyp_params.use_cuda else batch_labels.float()
 
                 preds, _ = model(text, audio, vision)
                 total_loss += criterion(preds, labels).item()
