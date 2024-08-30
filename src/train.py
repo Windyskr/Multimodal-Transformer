@@ -51,61 +51,66 @@ def train_model(settings, hyp_params, components, labeled_loader, unlabeled_load
     consistency_hook = components['consistency_hook']
 
     def train(model, optimizer, criterion, epoch):
-        epoch_loss = 0
         model.train()
-        num_batches = min(len(labeled_loader), len(unlabeled_loader))
+        total_loss = 0.0
+
         labeled_iter = iter(labeled_loader)
         unlabeled_iter = iter(unlabeled_loader)
 
-        for i_batch in range(num_batches):
-            optimizer.zero_grad()
-
-            # Process labeled data
+        for i_batch in range(hyp_params.n_train // (2 * hyp_params.batch_size)):
+            # labeled data
             labeled_batch = next(labeled_iter)
-            l_text, l_audio, l_vision = labeled_batch[0][1], labeled_batch[0][2], labeled_batch[0][3]
-            labels = labeled_batch[1]
+            sample_ind, l_text, l_audio, l_vision, l_labels, l_meta = labeled_batch
+            l_text, l_audio, l_vision, l_labels = l_text.cuda(), l_audio.cuda(), l_vision.cuda(), l_labels.cuda()
 
-            if hyp_params.use_cuda:
-                l_text, l_audio, l_vision = l_text.cuda(), l_audio.cuda(), l_vision.cuda()
-                labels = labels.cuda()
-
-            l_preds, _ = model(l_text, l_audio, l_vision)
-            sup_loss = criterion(l_preds, labels)
-
-            # Process unlabeled data
+            # unlabeled data
             unlabeled_batch = next(unlabeled_iter)
-            u_text, u_audio, u_vision = unlabeled_batch[0][1], unlabeled_batch[0][2], unlabeled_batch[0][3]
+            u_sample_ind, u_text, u_audio, u_vision, _, u_meta = unlabeled_batch
+            u_text, u_audio, u_vision = u_text.cuda(), u_audio.cuda(), u_vision.cuda()
 
-            if hyp_params.use_cuda:
-                u_text, u_audio, u_vision = u_text.cuda(), u_audio.cuda(), u_vision.cuda()
+            # forward pass
+            l_preds, l_hiddens = model(l_text, l_audio, l_vision)
+            u_preds, u_hiddens = model(u_text, u_audio, u_vision)
 
-            u_preds, _ = model(u_text, u_audio, u_vision)
+            # supervised loss
+            sup_loss = criterion(l_preds, l_labels)
 
-            # Generate pseudo-labels
-            pseudo_labels, mask = pseudo_labeling_hook(u_preds)
+            # MixMatch
+            u_preds_aug, u_hiddens_aug = model(u_text, u_audio, u_vision)
+            pseudo_labels = (u_preds + u_preds_aug) / 2
+            pseudo_labels = pseudo_labels.detach()
 
-            # Unsupervised loss
+            # sharpening
+            T = 0.5
+            pseudo_labels = pseudo_labels.pow(1 / T) / pseudo_labels.pow(1 / T).sum(dim=1, keepdim=True)
+
+            # unsupervised loss
+            mask = (pseudo_labels.max(1)[0] >= 0.95).float()
+
+            # 修改：确保 pseudo_labels 是浮点类型
+            pseudo_labels = pseudo_labels.float()
+
+            # 修改：调整 u_preds 和 pseudo_labels 的形状
+            u_preds = u_preds.view_as(pseudo_labels)
+
             unsup_loss = criterion(u_preds[mask], pseudo_labels[mask])
 
-            # Consistency regularization
-            if hyp_params.use_consistency:
-                u_text_aug, u_audio_aug, u_vision_aug = augment_data(u_text, u_audio, u_vision)
-                u_preds_aug, _ = model(u_text_aug, u_audio_aug, u_vision_aug)
-                consistency_loss = consistency_hook(u_preds, u_preds_aug)
-            else:
-                consistency_loss = 0
+            # total loss
+            lambda_u = 1.0
+            loss = sup_loss + lambda_u * unsup_loss
 
-            # Combine losses
-            lambda_u = hyp_params.lambda_u * linear_rampup(epoch, hyp_params.warmup_epochs)
-            total_loss = sup_loss + lambda_u * (unsup_loss + hyp_params.consistency_weight * consistency_loss)
-
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
+            # backward
+            optimizer.zero_grad()
+            loss.backward()
             optimizer.step()
 
-            epoch_loss += total_loss.item()
+            # update total loss
+            total_loss += loss.item()
 
-        return epoch_loss / num_batches
+        # average loss
+        avg_loss = total_loss / (hyp_params.n_train // (2 * hyp_params.batch_size))
+
+        return avg_loss
 
     def linear_rampup(current, warmup_steps):
         if warmup_steps == 0:
