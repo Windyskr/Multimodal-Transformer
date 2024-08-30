@@ -119,15 +119,15 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 ## Compute the ctc loss
                 l_len, a_len, v_len = hyp_params.l_len, hyp_params.a_len, hyp_params.v_len
                 # Output Labels
-                l_position = torch.tensor([i + 1 for i in range(l_len)] * batch_size).int().cpu()
+                l_position = torch.tensor([i + 1 for i in range(l_len)] * batch_size).int()
                 # Specifying each output length
-                l_length = torch.tensor([l_len] * batch_size).int().cpu()
+                l_length = torch.tensor([l_len] * batch_size).int()
                 # Specifying each input length
-                a_length = torch.tensor([a_len] * batch_size).int().cpu()
-                v_length = torch.tensor([v_len] * batch_size).int().cpu()
+                a_length = torch.tensor([a_len] * batch_size).int()
+                v_length = torch.tensor([v_len] * batch_size).int()
 
-                ctc_a2l_loss = ctc_criterion(a2l_position.transpose(0, 1).cpu(), l_position, a_length, l_length)
-                ctc_v2l_loss = ctc_criterion(v2l_position.transpose(0, 1).cpu(), l_position, v_length, l_length)
+                ctc_a2l_loss = ctc_criterion(a2l_position.transpose(0, 1), l_position, a_length, l_length)
+                ctc_v2l_loss = ctc_criterion(v2l_position.transpose(0, 1), l_position, v_length, l_length)
                 ctc_loss = ctc_a2l_loss + ctc_v2l_loss
                 ctc_loss = ctc_loss.cuda() if hyp_params.use_cuda else ctc_loss
             else:

@@ -24,12 +24,12 @@ class Multimodal_Datasets(Dataset):
         dataset = pickle.load(open(dataset_path, 'rb'))
 
         # These are torch tensors
-        self.vision = torch.tensor(dataset[split_type]['vision'].astype(np.float32)).cpu().detach()
-        self.text = torch.tensor(dataset[split_type]['text'].astype(np.float32)).cpu().detach()
+        self.vision = torch.tensor(dataset[split_type]['vision'].astype(np.float32)).detach()
+        self.text = torch.tensor(dataset[split_type]['text'].astype(np.float32)).detach()
         self.audio = dataset[split_type]['audio'].astype(np.float32)
         self.audio[self.audio == -np.inf] = 0
-        self.audio = torch.tensor(self.audio).cpu().detach()
-        self.labels = torch.tensor(dataset[split_type]['labels'].astype(np.float32)).cpu().detach()
+        self.audio = torch.tensor(self.audio).detach()
+        self.labels = torch.tensor(dataset[split_type]['labels'].astype(np.float32)).detach()
 
         # Note: this is STILL an numpy array
         self.meta = dataset[split_type]['id'] if 'id' in dataset[split_type].keys() else None
@@ -85,22 +85,22 @@ class PseudolabelMultimodalDataset(Multimodal_Datasets):
                                     self.data + '_data.pkl' if self.if_align else self.data + '_data_noalign.pkl')
         dataset = pickle.load(open(dataset_path, 'rb'))
 
-        self.vision = torch.tensor(dataset[self.split_type]['vision'].astype(np.float32)).cpu()
-        self.text = torch.tensor(dataset[self.split_type]['text'].astype(np.float32)).cpu()
+        self.vision = torch.tensor(dataset[self.split_type]['vision'].astype(np.float32))
+        self.text = torch.tensor(dataset[self.split_type]['text'].astype(np.float32))
         self.audio = dataset[self.split_type]['audio'].astype(np.float32)
         self.audio[self.audio == -np.inf] = 0
-        self.audio = torch.tensor(self.audio).cpu()
-        self.labels = torch.tensor(dataset[self.split_type]['labels'].astype(np.float32)).cpu()
+        self.audio = torch.tensor(self.audio)
+        self.labels = torch.tensor(dataset[self.split_type]['labels'].astype(np.float32))
 
         self.meta = dataset[self.split_type]['id'] if 'id' in dataset[self.split_type].keys() else None
 
     def process_data(self):
         if self.split_type == 'train':
             # Ensure all tensors are on CPU and the correct type
-            self.vision = self.vision.cpu().float()
-            self.text = self.text.cpu().float()
-            self.audio = self.audio.cpu().float()
-            self.labels = self.labels.cpu().float()
+            self.vision = self.vision.float()
+            self.text = self.text.float()
+            self.audio = self.audio.float()
+            self.labels = self.labels.float()
 
             # Shuffle the data
             perm = torch.randperm(len(self.labels))
