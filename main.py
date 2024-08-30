@@ -166,5 +166,9 @@ hyp_params.criterion = criterion_dict.get(dataset, 'L1Loss')
 
 
 if __name__ == '__main__':
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(0)
     test_loss = train.initiate(hyp_params, train_loader, valid_loader, test_loader)
 
