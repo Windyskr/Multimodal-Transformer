@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from modules.transformer import TransformerEncoder
 
 
-class MULTModel(nn.Module):
+class MULT(nn.Module):
     def __init__(self, hyp_params):
         """
         Construct a MulT model.
