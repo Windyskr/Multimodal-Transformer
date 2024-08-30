@@ -17,7 +17,11 @@ def custom_collate(batch):
 
     # 处理标签（Y）
     if isinstance(labels[0], torch.Tensor):
-        labels = torch.stack([label.cpu() for label in labels])  # 确保所有标签都在 CPU 上
+        # 将所有标签转换为浮点型
+        labels = torch.stack([label.float().cpu() for label in labels])
+    else:
+        # 如果标签不是张量，将其转换为浮点型张量
+        labels = torch.tensor(labels, dtype=torch.float32)
 
     # 处理元数据（META）
     meta_processed = []
@@ -28,6 +32,6 @@ def custom_collate(batch):
             meta_processed.append(m)
 
     # 处理 is_labeled
-    is_labeled = torch.tensor(is_labeled)
+    is_labeled = torch.tensor(is_labeled, dtype=torch.bool)
 
     return data_processed, labels, meta_processed, is_labeled
