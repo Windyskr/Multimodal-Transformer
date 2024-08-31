@@ -6,7 +6,7 @@ import torch.nn as nn
 # Code adapted from the fairseq repo.
 
 def make_positions(tensor, padding_idx, left_pad):
-    max_pos = padding_idx + 1 + tensor.size(1)
+    max_pos = padding_idx + tensor.size(1)
     device = tensor.device
     buf_name = f'range_buf_{device}'
     if not hasattr(make_positions, buf_name):
@@ -19,7 +19,7 @@ def make_positions(tensor, padding_idx, left_pad):
     positions = buf[:tensor.size(1)].expand_as(tensor)
     if left_pad:
         positions = positions - mask.size(1) + mask.long().sum(dim=1).unsqueeze(1)
-    return tensor.clone().masked_scatter_(mask, positions[mask].to(tensor.dtype))
+    return positions.masked_fill_(~mask, padding_idx)
 
 
 class SinusoidalPositionalEmbedding(nn.Module):
@@ -56,7 +56,7 @@ class SinusoidalPositionalEmbedding(nn.Module):
 
     def forward(self, input):
         bsz, seq_len = input.size()
-        max_pos = self.padding_idx + 1 + seq_len
+        max_pos = self.padding_idx + seq_len
         device = input.device
         if device not in self.weights or max_pos > self.weights[device].size(0):
             self.weights[device] = self.get_embedding(
@@ -65,7 +65,11 @@ class SinusoidalPositionalEmbedding(nn.Module):
 
         positions = make_positions(input, self.padding_idx, self.left_pad)
 
-        return self.weights[device].to(positions.dtype).index_select(0, positions.view(-1)).view(bsz, seq_len,                                                                                                 -1).detach()
+        return (self.weights[device]
+                .to(positions.dtype)
+                .index_select(0, positions.view(-1))
+                .view(bsz, seq_len, -1)
+                .detach())
 
     def max_positions(self):
         """Maximum number of supported positions."""
