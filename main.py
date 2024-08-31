@@ -95,7 +95,7 @@ parser.add_argument('--pseudolabel_threshold', type=float, default=0.95,
 parser.add_argument('--pseudolabel_update_interval', type=int, default=100,
                     help='number of iterations between pseudo-label updates (default: 100)')
 parser.add_argument('--lambda_u', type=float, default=1.0,
-                    help='weight for unlabeled loss (default: 1.0)')
+                    help='weight for unlabeled loss (default: 0.5)')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)

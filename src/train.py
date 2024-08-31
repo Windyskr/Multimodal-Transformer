@@ -184,6 +184,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
             optimizer.step()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
             proc_loss += combined_loss.item() * batch_size
             proc_size += batch_size
