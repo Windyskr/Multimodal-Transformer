@@ -10,13 +10,14 @@ def make_positions(tensor, padding_idx, left_pad):
     device = tensor.device
     buf_name = f'range_buf_{device}'
     if not hasattr(make_positions, buf_name):
-        setattr(make_positions, buf_name, torch.LongTensor(max_pos).to(device))
+        setattr(make_positions, buf_name, torch.arange(padding_idx + 1, max_pos, device=device))
     buf = getattr(make_positions, buf_name)
-    if buf.numel() < max_pos:
-        buf.resize_(max_pos)
-    torch.arange(padding_idx + 1, max_pos, out=buf, device=device)
+    if buf.size(0) < max_pos - padding_idx - 1:
+        buf = torch.arange(padding_idx + 1, max_pos, device=device)
+        setattr(make_positions, buf_name, buf)
+
     mask = tensor.ne(padding_idx)
-    positions = buf[:tensor.size(1)].expand_as(tensor)
+    positions = buf[:tensor.size(1)].unsqueeze(0).expand_as(tensor)
     if left_pad:
         positions = positions - mask.size(1) + mask.long().sum(dim=1).unsqueeze(1)
     return positions.masked_fill_(~mask, padding_idx)
