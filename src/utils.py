@@ -32,7 +32,10 @@ def save_load_name(args, name=''):
 
 def save_model(args, model, name=''):
     name = save_load_name(args, name)
-    torch.save(model, f'pre_trained_models/{name}.pt')
+    save_dir = 'pre_trained_models'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    torch.save(model, os.path.join(save_dir, f'{name}.pt'))
 
 
 def load_model(args, name=''):
