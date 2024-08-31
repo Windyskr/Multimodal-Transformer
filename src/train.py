@@ -184,7 +184,12 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 with torch.no_grad():
                     pseudo_labels = preds[~labeled_mask].detach()
                     mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
-                    pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask].argmax(dim=1))
+                    if hyp_params.dataset in ['mosi', 'mosei']:
+                        # For regression tasks, use the predictions directly
+                        pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask])
+                    else:
+                        # For classification tasks, use argmax
+                        pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask].argmax(dim=-1))
 
                 # Combine losses
                 raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
