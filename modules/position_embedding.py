@@ -6,7 +6,7 @@ import torch.nn as nn
 # Code adapted from the fairseq repo.
 
 def make_positions(tensor, padding_idx, left_pad):
-    max_pos = padding_idx + tensor.size(1)
+    max_pos = padding_idx + tensor.size(1) + 1
     device = tensor.device
     buf_name = f'range_buf_{device}'
     if not hasattr(make_positions, buf_name):
@@ -57,7 +57,7 @@ class SinusoidalPositionalEmbedding(nn.Module):
 
     def forward(self, input):
         bsz, seq_len = input.size()
-        max_pos = self.padding_idx + seq_len
+        max_pos = self.padding_idx + seq_len + 1
         device = input.device
         if device not in self.weights or max_pos > self.weights[device].size(0):
             self.weights[device] = self.get_embedding(
