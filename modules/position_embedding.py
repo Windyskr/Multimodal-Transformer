@@ -68,7 +68,7 @@ class SinusoidalPositionalEmbedding(nn.Module):
 
         return (self.weights[device]
                 .to(positions.dtype)
-                .index_select(0, positions.view(-1))
+                .index_select(0, positions.reshape(-1))
                 .view(bsz, seq_len, -1)
                 .detach())
 
