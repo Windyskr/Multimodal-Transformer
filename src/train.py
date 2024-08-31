@@ -129,29 +129,29 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         eval_attr_i = eval_attr_i.view(-1)
 
                     # Calculate loss for labeled data
-                    labeled_loss = criterion(preds_i[labeled_mask_i], eval_attr_i[labeled_mask_i])
+                    labeled_loss = criterion(preds[labeled_mask], eval_attr[labeled_mask])
 
                     # Generate pseudo-labels for unlabeled data
                     with torch.no_grad():
-                        pseudo_labels = preds_i[~labeled_mask_i].detach()
-                        mask = confidence_i[~labeled_mask_i] > hyp_params.pseudolabel_threshold
+                        pseudo_labels = preds[~labeled_mask].detach()
+                        mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
                         if hyp_params.dataset in ['mosi', 'mosei']:
                             # For regression tasks, use the predictions directly
-                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], pseudo_labels[mask])
+                            pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask])
                         else:
                             # For classification tasks, use argmax
-                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask],
+                            pseudo_labeled_loss = criterion(preds[~labeled_mask][mask],
                                                             pseudo_labels[mask].argmax(dim=-1))
 
                     # Combine losses
-                    raw_loss_i = (labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss) / batch_chunk
-                    raw_loss += raw_loss_i
-                    if not torch.isnan(raw_loss_i) and not torch.isinf(raw_loss_i):
-                        raw_loss_i.backward()
+                    raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
+                    combined_loss = raw_loss
+                    if not torch.isnan(combined_loss) and not torch.isinf(combined_loss):
+                        combined_loss.backward()
 
                 combined_loss = raw_loss
             else:
-                preds, confidence, _ = net(text, audio, vision)
+                preds, confidence, _ = net(text, audio, vision, temperature=2.0)
                 if hyp_params.dataset == 'iemocap':
                     preds = preds.view(-1, 2)
                     eval_attr = eval_attr.view(-1)
