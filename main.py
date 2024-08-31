@@ -128,7 +128,10 @@ if torch.cuda.is_available():
         generator = torch.Generator(device=device)
         print(f"Running on {torch.cuda.get_device_name(0)}")
         use_cuda = True
-
+elif not args.no_cuda:
+    print("WARNING: You don't have a CUDA device, so you should probably run with --no_cuda")
+    use_cuda = False
+    generator = torch.Generator(device='cpu')
 ####################################################################
 #
 # Load the dataset (aligned or non-aligned)
@@ -141,9 +144,9 @@ train_data = get_data(args, dataset, 'train')
 valid_data = get_data(args, dataset, 'valid')
 test_data = get_data(args, dataset, 'test')
    
-train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
-valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
-test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,generator=generator)
+valid_loader = DataLoader(valid_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn,generator=generator)
+test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn,generator=generator)
 
 print('Finish loading the data....')
 if not args.aligned:
