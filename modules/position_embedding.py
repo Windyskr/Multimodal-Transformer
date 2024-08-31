@@ -6,21 +6,17 @@ import torch.nn as nn
 # Code adapted from the fairseq repo.
 
 def make_positions(tensor, padding_idx, left_pad):
-    """Replace non-padding symbols with their position numbers.
-    Position numbers begin at padding_idx+1.
-    Padding symbols are ignored, but it is necessary to specify whether padding
-    is added on the left side (left_pad=True) or right side (left_pad=False).
-    """
     max_pos = padding_idx + 1 + tensor.size(1)
     device = tensor.device
     buf_name = f'range_buf_{device}'
     if not hasattr(make_positions, buf_name):
-        setattr(make_positions, buf_name, tensor.new_long())
-    setattr(make_positions, buf_name, getattr(make_positions, buf_name).type_as(tensor).long())
-    if getattr(make_positions, buf_name).numel() < max_pos:
-        torch.arange(padding_idx + 1, max_pos, out=getattr(make_positions, buf_name), device=device)
+        setattr(make_positions, buf_name, torch.LongTensor(max_pos).to(device))
+    buf = getattr(make_positions, buf_name)
+    if buf.numel() < max_pos:
+        buf.resize_(max_pos)
+    torch.arange(padding_idx + 1, max_pos, out=buf, device=device)
     mask = tensor.ne(padding_idx)
-    positions = getattr(make_positions, buf_name)[:tensor.size(1)].expand_as(tensor)
+    positions = buf[:tensor.size(1)].expand_as(tensor)
     if left_pad:
         positions = positions - mask.size(1) + mask.long().sum(dim=1).unsqueeze(1)
     return tensor.clone().masked_scatter_(mask, positions[mask])
@@ -68,9 +64,6 @@ class SinusoidalPositionalEmbedding(nn.Module):
             ).to(device)
 
         positions = make_positions(input, self.padding_idx, self.left_pad)
-
-        # Ensure positions tensor is on the same device and has the same dtype as weights
-        positions = positions.to(device=self.weights[device].device, dtype=torch.long)
 
         return self.weights[device].index_select(0, positions.view(-1)).view(bsz, seq_len, -1).detach()
 
