@@ -172,7 +172,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 ctc_loss.backward()
                 combined_loss = raw_loss + ctc_loss
             else:
-                preds, hiddens , _ = net(text, audio, vision)
+                preds, confidence, _ = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
                     preds = preds.view(-1, 2)
                     eval_attr = eval_attr.view(-1)
@@ -183,8 +183,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 # Generate pseudo-labels for unlabeled data
                 with torch.no_grad():
                     pseudo_labels = preds[~labeled_mask].detach()
-                    pseudo_confidence = confidence[~labeled_mask].detach()
-                    mask = pseudo_confidence > hyp_params.pseudolabel_threshold
+                    mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
                     pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask].argmax(dim=1))
 
                 # Combine losses
