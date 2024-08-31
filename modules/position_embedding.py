@@ -19,7 +19,7 @@ def make_positions(tensor, padding_idx, left_pad):
     positions = buf[:tensor.size(1)].expand_as(tensor)
     if left_pad:
         positions = positions - mask.size(1) + mask.long().sum(dim=1).unsqueeze(1)
-    return tensor.clone().masked_scatter_(mask, positions[mask])
+    return tensor.clone().masked_scatter_(mask, positions[mask].to(tensor.dtype))
 
 
 class SinusoidalPositionalEmbedding(nn.Module):
