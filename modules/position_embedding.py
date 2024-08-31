@@ -15,8 +15,8 @@ def make_positions(tensor, padding_idx, left_pad):
     device = tensor.device
     buf_name = f'range_buf_{device}'
     if not hasattr(make_positions, buf_name):
-        setattr(make_positions, buf_name, tensor.new())
-    setattr(make_positions, buf_name, getattr(make_positions, buf_name).type_as(tensor))
+        setattr(make_positions, buf_name, tensor.new_long())
+    setattr(make_positions, buf_name, getattr(make_positions, buf_name).type_as(tensor).long())
     if getattr(make_positions, buf_name).numel() < max_pos:
         torch.arange(padding_idx + 1, max_pos, out=getattr(make_positions, buf_name), device=device)
     mask = tensor.ne(padding_idx)
@@ -59,20 +59,20 @@ class SinusoidalPositionalEmbedding(nn.Module):
         return emb
 
     def forward(self, input):
-        """Input is expected to be of size [bsz x seqlen]."""
         bsz, seq_len = input.size()
         max_pos = self.padding_idx + 1 + seq_len
-        device = input.get_device()
+        device = input.device
         if device not in self.weights or max_pos > self.weights[device].size(0):
-            # recompute/expand embeddings if needed
-            self.weights[device] = SinusoidalPositionalEmbedding.get_embedding(
-                max_pos,
-                self.embedding_dim,
-                self.padding_idx,
-            )
-        self.weights[device] = self.weights[device].type_as(self._float_tensor)
+            self.weights[device] = self.get_embedding(
+                max_pos, self.embedding_dim, self.padding_idx,
+            ).to(device)
+
         positions = make_positions(input, self.padding_idx, self.left_pad)
-        return self.weights[device].index_select(0, positions.view(-1)).reshape(bsz, seq_len, -1).detach()
+
+        # Ensure positions tensor is on the same device and has the same dtype as weights
+        positions = positions.to(device=self.weights[device].device, dtype=torch.long)
+
+        return self.weights[device].index_select(0, positions.view(-1)).view(bsz, seq_len, -1).detach()
 
     def max_positions(self):
         """Maximum number of supported positions."""
