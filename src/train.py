@@ -108,32 +108,6 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             batch_size = text.size(0)
             batch_chunk = hyp_params.batch_chunk
 
-            ######## CTC STARTS ######## Do not worry about this if not working on CTC
-            if ctc_criterion is not None:
-                ctc_a2l_net = nn.DataParallel(ctc_a2l_module) if batch_size > 10 else ctc_a2l_module
-                ctc_v2l_net = nn.DataParallel(ctc_v2l_module) if batch_size > 10 else ctc_v2l_module
-
-                audio, a2l_position = ctc_a2l_net(audio)  # audio now is the aligned to text
-                vision, v2l_position = ctc_v2l_net(vision)
-
-                ## Compute the ctc loss
-                l_len, a_len, v_len = hyp_params.l_len, hyp_params.a_len, hyp_params.v_len
-                # Output Labels
-                l_position = torch.tensor([i + 1 for i in range(l_len)] * batch_size).int()
-                # Specifying each output length
-                l_length = torch.tensor([l_len] * batch_size).int()
-                # Specifying each input length
-                a_length = torch.tensor([a_len] * batch_size).int()
-                v_length = torch.tensor([v_len] * batch_size).int()
-
-                ctc_a2l_loss = ctc_criterion(a2l_position.transpose(0, 1), l_position, a_length, l_length)
-                ctc_v2l_loss = ctc_criterion(v2l_position.transpose(0, 1), l_position, v_length, l_length)
-                ctc_loss = ctc_a2l_loss + ctc_v2l_loss
-                ctc_loss = ctc_loss.cuda() if hyp_params.use_cuda else ctc_loss
-            else:
-                ctc_loss = 0
-            ######## CTC ENDS ########
-
             combined_loss = 0
             net = nn.DataParallel(model) if batch_size > 10 else model
             if batch_chunk > 1:
@@ -148,7 +122,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                     text_i, audio_i, vision_i = text_chunks[i], audio_chunks[i], vision_chunks[i]
                     eval_attr_i = eval_attr_chunks[i]
                     labeled_mask_i = labeled_mask_chunks[i]
-                    preds_i, hiddens_i = net(text_i, audio_i, vision_i)
+                    preds_i, confidence_i, _ = net(text_i, audio_i, vision_i)
 
                     if hyp_params.dataset == 'iemocap':
                         preds_i = preds_i.view(-1, 2)
@@ -160,17 +134,22 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                     # Generate pseudo-labels for unlabeled data
                     with torch.no_grad():
                         pseudo_labels = preds_i[~labeled_mask_i].detach()
-                        confidence, predicted = torch.max(F.softmax(pseudo_labels, dim=1), dim=1)
-                        mask = confidence > hyp_params.pseudolabel_threshold
-                        pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], predicted[mask])
+                        mask = confidence_i[~labeled_mask_i] > hyp_params.pseudolabel_threshold
+                        if hyp_params.dataset in ['mosi', 'mosei']:
+                            # For regression tasks, use the predictions directly
+                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], pseudo_labels[mask])
+                        else:
+                            # For classification tasks, use argmax
+                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask],
+                                                            pseudo_labels[mask].argmax(dim=-1))
 
                     # Combine losses
                     raw_loss_i = (labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss) / batch_chunk
                     raw_loss += raw_loss_i
-                    raw_loss_i.backward()
+                    if not torch.isnan(raw_loss_i) and not torch.isinf(raw_loss_i):
+                        raw_loss_i.backward()
 
-                ctc_loss.backward()
-                combined_loss = raw_loss + ctc_loss
+                combined_loss = raw_loss
             else:
                 preds, confidence, _ = net(text, audio, vision)
                 if hyp_params.dataset == 'iemocap':
@@ -193,8 +172,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
                 # Combine losses
                 raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
-                combined_loss = raw_loss + ctc_loss
-                combined_loss.backward()
+                combined_loss = raw_loss
+                if not torch.isnan(combined_loss) and not torch.isinf(combined_loss):
+                    combined_loss.backward()
 
             if ctc_criterion is not None:
                 torch.nn.utils.clip_grad_norm_(ctc_a2l_module.parameters(), hyp_params.clip)
@@ -205,7 +185,7 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
             optimizer.step()
 
-            proc_loss += raw_loss.item() * batch_size
+            proc_loss += combined_loss.item() * batch_size
             proc_size += batch_size
             epoch_loss += combined_loss.item() * batch_size
             if i_batch % hyp_params.log_interval == 0 and i_batch > 0:
