@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from src import train
 
 
+
 def collate_fn(batch):
     # Separate the batch into its components
     # use cuda
@@ -17,7 +18,6 @@ def collate_fn(batch):
     masks = torch.tensor([item[3] for item in batch]).cuda()
 
     return (indices, texts, audios, visions), labels, metas, masks
-
 parser = argparse.ArgumentParser(description='MOSEI Sentiment Analysis')
 parser.add_argument('-f', default='', type=str)
 

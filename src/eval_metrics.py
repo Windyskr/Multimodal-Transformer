@@ -29,8 +29,8 @@ def weighted_accuracy(test_preds_emo, test_truth_emo):
 
 
 def eval_mosei_senti(results, truths, exclude_zero=False):
-    test_preds = results.view(-1).detach().numpy()
-    test_truth = truths.view(-1).detach().numpy()
+    test_preds = results.view(-1).detach().cpu().numpy()
+    test_truth = truths.view(-1).detach().cpu().numpy()
 
     non_zeros = np.array([i for i, e in enumerate(test_truth) if e != 0 or (not exclude_zero)])
     # 过滤掉伪标签样本（伪标签为-1）
