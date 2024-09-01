@@ -121,14 +121,19 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 pseudo_labels = preds[~labeled_mask].detach()
                 mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
 
-                if hyp_params.dataset in ['mosi', 'mosei']:
-                    # For regression tasks, use Huber loss which is more robust to outliers
-                    pseudo_labeled_loss = F.smooth_l1_loss(preds[~labeled_mask][mask], pseudo_labels[mask])
+                # Check if any samples meet the threshold
+                if mask.sum() > 0:
+                    if hyp_params.dataset in ['mosi', 'mosei']:
+                        # For regression tasks, use Huber loss which is more robust to outliers
+                        pseudo_labeled_loss = F.smooth_l1_loss(preds[~labeled_mask][mask], pseudo_labels[mask])
+                    else:
+                        # For classification tasks, use log_softmax and nll_loss for numerical stability
+                        log_probs = F.log_softmax(preds[~labeled_mask][mask], dim=-1)
+                        targets = pseudo_labels[mask].argmax(dim=-1)
+                        pseudo_labeled_loss = F.nll_loss(log_probs, targets)
                 else:
-                    # For classification tasks, use log_softmax and nll_loss for numerical stability
-                    log_probs = F.log_softmax(preds[~labeled_mask][mask], dim=-1)
-                    targets = pseudo_labels[mask].argmax(dim=-1)
-                    pseudo_labeled_loss = F.nll_loss(log_probs, targets)
+                    # If no samples meet the threshold, set pseudo_labeled_loss to 0
+                    pseudo_labeled_loss = torch.tensor(0.0, device=labeled_loss.device)
 
             # Combine losses
             if torch.isnan(labeled_loss):
