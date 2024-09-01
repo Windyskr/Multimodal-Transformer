@@ -90,8 +90,8 @@ parser.add_argument('--name', type=str, default='mult',
                     help='name of the trial (default: "mult")')
 parser.add_argument('--labeled_ratio', type=float, default=0.5,
                     help='ratio of labeled data in training set (default: 0.5)')
-parser.add_argument('--pseudolabel_threshold', type=float, default=0.95,
-                    help='confidence threshold for pseudo-labeling (default: 0.95)')
+parser.add_argument('--pseudolabel_threshold', type=float, default=0.6,
+                    help='confidence threshold for pseudo-labeling (default: 0.6)')
 parser.add_argument('--pseudolabel_update_interval', type=int, default=100,
                     help='number of iterations between pseudo-label updates (default: 100)')
 parser.add_argument('--lambda_u', type=float, default=0.5,
