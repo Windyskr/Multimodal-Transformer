@@ -86,9 +86,9 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
               ctc_criterion):
         epoch_loss = 0
         model.train()
-        print(f"Number of batches: {len(train_loader)}")
-        print(f"Total number of samples: {len(train_loader.dataset)}")
-        print(f"Number of labeled samples: {train_loader.dataset.labeled_mask.sum().item()}")
+        # print(f"Number of batches: {len(train_loader)}")
+        # print(f"Total number of samples: {len(train_loader.dataset)}")
+        # print(f"Number of labeled samples: {train_loader.dataset.labeled_mask.sum().item()}")
         num_batches = hyp_params.n_train // hyp_params.batch_size
         proc_loss, proc_size = 0, 0
         start_time = time.time()
