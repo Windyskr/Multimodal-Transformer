@@ -16,7 +16,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score, f1_score
 from src.eval_metrics import *
-
+import torch.nn.functional as F
 
 ####################################################################
 #
@@ -106,100 +106,60 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         eval_attr = eval_attr.long()
 
             batch_size = text.size(0)
-            batch_chunk = hyp_params.batch_chunk
-
-            combined_loss = 0
             net = nn.DataParallel(model) if batch_size > 10 else model
-            if batch_chunk > 1:
-                raw_loss = combined_loss = 0
-                text_chunks = text.chunk(batch_chunk, dim=0)
-                audio_chunks = audio.chunk(batch_chunk, dim=0)
-                vision_chunks = vision.chunk(batch_chunk, dim=0)
-                eval_attr_chunks = eval_attr.chunk(batch_chunk, dim=0)
-                labeled_mask_chunks = labeled_mask.chunk(batch_chunk, dim=0)
 
-                for i in range(batch_chunk):
-                    text_i, audio_i, vision_i = text_chunks[i], audio_chunks[i], vision_chunks[i]
-                    eval_attr_i = eval_attr_chunks[i]
-                    labeled_mask_i = labeled_mask_chunks[i]
-                    preds_i, confidence_i, _ = net(text_i, audio_i, vision_i)
+            preds, confidence, _ = net(text, audio, vision, temperature=2.0)
+            if hyp_params.dataset == 'iemocap':
+                preds = preds.view(-1, 2)
+                eval_attr = eval_attr.view(-1)
 
-                    if hyp_params.dataset == 'iemocap':
-                        preds_i = preds_i.view(-1, 2)
-                        eval_attr_i = eval_attr_i.view(-1)
+            # Calculate loss for labeled data
+            labeled_loss = criterion(preds[labeled_mask], eval_attr[labeled_mask])
 
-                    # Calculate loss for labeled data
-                    labeled_loss = criterion(preds_i[labeled_mask_i], eval_attr_i[labeled_mask_i])
+            # Generate pseudo-labels for unlabeled data
+            with torch.no_grad():
+                pseudo_labels = preds[~labeled_mask].detach()
+                mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
 
-                    # Generate pseudo-labels for unlabeled data
-                    with torch.no_grad():
-                        pseudo_labels = preds_i[~labeled_mask_i].detach()
-                        mask = confidence_i[~labeled_mask_i] > hyp_params.pseudolabel_threshold
-                        if hyp_params.dataset in ['mosi', 'mosei']:
-                            # For regression tasks, use the predictions directly
-                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], pseudo_labels[mask])
-                        else:
-                            # For classification tasks, use argmax
-                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask],
-                                                            pseudo_labels[mask].argmax(dim=-1))
+                if hyp_params.dataset in ['mosi', 'mosei']:
+                    # For regression tasks, use Huber loss which is more robust to outliers
+                    pseudo_labeled_loss = F.smooth_l1_loss(preds[~labeled_mask][mask], pseudo_labels[mask])
+                else:
+                    # For classification tasks, use log_softmax and nll_loss for numerical stability
+                    log_probs = F.log_softmax(preds[~labeled_mask][mask], dim=-1)
+                    targets = pseudo_labels[mask].argmax(dim=-1)
+                    pseudo_labeled_loss = F.nll_loss(log_probs, targets)
 
-                    # Combine losses
-                    raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
-                    combined_loss += raw_loss
+            # Combine losses
+            if torch.isnan(labeled_loss):
+                print(f"NaN detected in labeled loss. Batch: {i_batch}")
+                labeled_loss = torch.tensor(0.0).to(labeled_loss.device)
 
-                    # Check for NaN
-                    if torch.isnan(combined_loss):
-                        print(f"NaN detected in loss calculation. Batch: {i_batch}, Chunk: {i}")
-                        print(f"Labeled loss: {labeled_loss}, Pseudo-labeled loss: {pseudo_labeled_loss}")
-                        continue
+            if torch.isnan(pseudo_labeled_loss):
+                print(f"NaN detected in pseudo-labeled loss. Batch: {i_batch}")
+                pseudo_labeled_loss = torch.tensor(0.0).to(pseudo_labeled_loss.device)
 
-                    combined_loss.backward()
+            combined_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
 
-                combined_loss = raw_loss
-            else:
-                preds, confidence, _ = net(text, audio, vision, temperature=2.0)
-                if hyp_params.dataset == 'iemocap':
-                    preds = preds.view(-1, 2)
-                    eval_attr = eval_attr.view(-1)
-
-                # Calculate loss for labeled data
-                labeled_loss = criterion(preds[labeled_mask], eval_attr[labeled_mask])
-
-                # Generate pseudo-labels for unlabeled data
-                with torch.no_grad():
-                    pseudo_labels = preds[~labeled_mask].detach()
-                    mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
-                    if hyp_params.dataset in ['mosi', 'mosei']:
-                        # For regression tasks, use the predictions directly
-                        pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask])
-                    else:
-                        # For classification tasks, use argmax
-                        pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask].argmax(dim=-1))
-
-                # Combine losses
-                raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
-                combined_loss = raw_loss
-
-                # Check for NaN
-                if torch.isnan(combined_loss):
-                    print(f"NaN detected in loss calculation. Batch: {i_batch}")
-                    print(f"Labeled loss: {labeled_loss}, Pseudo-labeled loss: {pseudo_labeled_loss}")
-                    continue
-
+            if not torch.isnan(combined_loss):
                 combined_loss.backward()
 
-            if ctc_criterion is not None:
-                torch.nn.utils.clip_grad_norm_(ctc_a2l_module.parameters(), hyp_params.clip)
-                torch.nn.utils.clip_grad_norm_(ctc_v2l_module.parameters(), hyp_params.clip)
-                ctc_a2l_optimizer.step()
-                ctc_v2l_optimizer.step()
+                if ctc_criterion is not None:
+                    torch.nn.utils.clip_grad_norm_(ctc_a2l_module.parameters(), hyp_params.clip)
+                    torch.nn.utils.clip_grad_norm_(ctc_v2l_module.parameters(), hyp_params.clip)
+                    ctc_a2l_optimizer.step()
+                    ctc_v2l_optimizer.step()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
-            optimizer.step()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
+                optimizer.step()
 
-            proc_loss += combined_loss.item() * batch_size
-            proc_size += batch_size
-            epoch_loss += combined_loss.item() * batch_size
+                proc_loss += combined_loss.item() * batch_size
+                proc_size += batch_size
+                epoch_loss += combined_loss.item() * batch_size
+            else:
+                print(f"NaN detected in combined loss. Batch: {i_batch}")
+                print(f"Labeled loss: {labeled_loss}, Pseudo-labeled loss: {pseudo_labeled_loss}")
+
             if i_batch % hyp_params.log_interval == 0 and i_batch > 0:
                 avg_loss = proc_loss / proc_size
                 elapsed_time = time.time() - start_time
@@ -207,12 +167,6 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                       format(epoch, i_batch, num_batches, elapsed_time * 1000 / hyp_params.log_interval, avg_loss))
                 proc_loss, proc_size = 0, 0
                 start_time = time.time()
-
-            # Check for NaN in gradients
-            for name, param in model.named_parameters():
-                if param.grad is not None:
-                    if torch.isnan(param.grad).any():
-                        print(f"NaN detected in gradients for parameter: {name}")
 
         return epoch_loss / hyp_params.n_train
 
