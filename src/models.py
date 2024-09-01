@@ -147,6 +147,11 @@ class MULTModel(nn.Module):
         # Apply temperature scaling
         scaled_output = output / temperature
 
+        # Add a small epsilon to avoid division by zero
+        epsilon = 1e-8
+        confidence = 1 - torch.abs(scaled_output - scaled_output.mean()) / (
+                    scaled_output.max() - scaled_output.min() + epsilon)
+
         # For regression tasks (e.g., MOSEI), we can use the absolute difference from the mean as a crude confidence estimate
         confidence = 1 - torch.abs(scaled_output - scaled_output.mean()) / (scaled_output.max() - scaled_output.min())
 

@@ -129,25 +129,31 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                         eval_attr_i = eval_attr_i.view(-1)
 
                     # Calculate loss for labeled data
-                    labeled_loss = criterion(preds[labeled_mask], eval_attr[labeled_mask])
+                    labeled_loss = criterion(preds_i[labeled_mask_i], eval_attr_i[labeled_mask_i])
 
                     # Generate pseudo-labels for unlabeled data
                     with torch.no_grad():
-                        pseudo_labels = preds[~labeled_mask].detach()
-                        mask = confidence[~labeled_mask] > hyp_params.pseudolabel_threshold
+                        pseudo_labels = preds_i[~labeled_mask_i].detach()
+                        mask = confidence_i[~labeled_mask_i] > hyp_params.pseudolabel_threshold
                         if hyp_params.dataset in ['mosi', 'mosei']:
                             # For regression tasks, use the predictions directly
-                            pseudo_labeled_loss = criterion(preds[~labeled_mask][mask], pseudo_labels[mask])
+                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask], pseudo_labels[mask])
                         else:
                             # For classification tasks, use argmax
-                            pseudo_labeled_loss = criterion(preds[~labeled_mask][mask],
+                            pseudo_labeled_loss = criterion(preds_i[~labeled_mask_i][mask],
                                                             pseudo_labels[mask].argmax(dim=-1))
 
                     # Combine losses
                     raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
-                    combined_loss = raw_loss
-                    if not torch.isnan(combined_loss) and not torch.isinf(combined_loss):
-                        combined_loss.backward()
+                    combined_loss += raw_loss
+
+                    # Check for NaN
+                    if torch.isnan(combined_loss):
+                        print(f"NaN detected in loss calculation. Batch: {i_batch}, Chunk: {i}")
+                        print(f"Labeled loss: {labeled_loss}, Pseudo-labeled loss: {pseudo_labeled_loss}")
+                        continue
+
+                    combined_loss.backward()
 
                 combined_loss = raw_loss
             else:
@@ -173,8 +179,14 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                 # Combine losses
                 raw_loss = labeled_loss + hyp_params.lambda_u * pseudo_labeled_loss
                 combined_loss = raw_loss
-                if not torch.isnan(combined_loss) and not torch.isinf(combined_loss):
-                    combined_loss.backward()
+
+                # Check for NaN
+                if torch.isnan(combined_loss):
+                    print(f"NaN detected in loss calculation. Batch: {i_batch}")
+                    print(f"Labeled loss: {labeled_loss}, Pseudo-labeled loss: {pseudo_labeled_loss}")
+                    continue
+
+                combined_loss.backward()
 
             if ctc_criterion is not None:
                 torch.nn.utils.clip_grad_norm_(ctc_a2l_module.parameters(), hyp_params.clip)
@@ -184,7 +196,6 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), hyp_params.clip)
             optimizer.step()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
             proc_loss += combined_loss.item() * batch_size
             proc_size += batch_size
@@ -196,6 +207,12 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
                       format(epoch, i_batch, num_batches, elapsed_time * 1000 / hyp_params.log_interval, avg_loss))
                 proc_loss, proc_size = 0, 0
                 start_time = time.time()
+
+            # Check for NaN in gradients
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    if torch.isnan(param.grad).any():
+                        print(f"NaN detected in gradients for parameter: {name}")
 
         return epoch_loss / hyp_params.n_train
 
@@ -247,13 +264,21 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         return avg_loss, results, truths
 
     best_valid = 1e8
-    for epoch in range(1, hyp_params.num_epochs+1):
+    for epoch in range(1, hyp_params.num_epochs + 1):
         start = time.time()
         model.train()
-        train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer, ctc_v2l_optimizer, ctc_criterion)
+        try:
+            train_loss = train(model, optimizer, criterion, ctc_a2l_module, ctc_v2l_module, ctc_a2l_optimizer,
+                               ctc_v2l_optimizer, ctc_criterion)
+        except RuntimeError as e:
+            print(f"RuntimeError in epoch {epoch}: {e}")
+            print("Skipping this epoch")
+            continue
+
         # Update pseudo-labels
         if epoch % hyp_params.pseudolabel_update_interval == 0:
             update_pseudolabels(model, train_loader, hyp_params)
+
         # Evaluate on validation set
         val_loss, _, _ = evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=False)
 
@@ -261,13 +286,18 @@ def train_model(settings, hyp_params, train_loader, valid_loader, test_loader):
         test_loss, _, _ = evaluate(model, ctc_a2l_module, ctc_v2l_module, criterion, test=True)
 
         end = time.time()
-        duration = end-start
-        scheduler.step(val_loss)    # Decay learning rate by validation loss
+        duration = end - start
+        scheduler.step(val_loss)  # Decay learning rate by validation loss
 
-        print("-"*50)
-        print('Epoch {:2d} | Time {:5.4f} sec | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch, duration, val_loss, test_loss))
-        print("-"*50)
-        
+        print("-" * 50)
+        print(
+            'Epoch {:2d} | Time {:5.4f} sec | Train Loss {:5.4f} | Valid Loss {:5.4f} | Test Loss {:5.4f}'.format(epoch,
+                                                                                                                  duration,
+                                                                                                                  train_loss,
+                                                                                                                  val_loss,
+                                                                                                                  test_loss))
+        print("-" * 50)
+
         if val_loss < best_valid:
             print(f"Saved model at pre_trained_models/{hyp_params.name}.pt!")
             save_model(hyp_params, model, name=hyp_params.name)
